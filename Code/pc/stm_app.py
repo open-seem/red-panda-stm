@@ -16,6 +16,14 @@ rcParams.update({'figure.autolayout': True})
 
 
 def save_data_to_file(filename_prefix, data_to_store: list):
+    """Saves a list of data to a CSV file.
+
+    The filename is generated using the provided prefix and a timestamp.
+
+    Args:
+        filename_prefix (str): The prefix for the filename.
+        data_to_store (list): The list of data to be saved.
+    """
     current_time_stamp = datetime.now()
     # getting the timestamp
     ts = int(datetime.timestamp(current_time_stamp)*1000)
@@ -28,7 +36,21 @@ def save_data_to_file(filename_prefix, data_to_store: list):
 
 
 class PlotFrame(ttk.Frame):
+    """A custom tkinter frame for embedding matplotlib plots.
+
+    This class creates a frame containing a matplotlib Figure and Canvas,
+    allowing for easy integration of plots into a tkinter application.
+    """
     def __init__(self, parent, with_toobar=False,  dpi=300.0, width=400, height=400, *args, **kwargs):
+        """Initializes the PlotFrame.
+
+        Args:
+            parent: The parent tkinter widget.
+            with_toobar (bool, optional): Whether to include a matplotlib toolbar. Defaults to False.
+            dpi (float, optional): The DPI of the figure. Defaults to 300.0.
+            width (int, optional): The width of the figure in pixels. Defaults to 400.
+            height (int, optional): The height of the figure in pixels. Defaults to 400.
+        """
         super().__init__(parent, *args, **kwargs)
         self.figure = Figure(figsize=(width / dpi*0.8,
                                       height / dpi*0.8), dpi=dpi)
@@ -47,6 +69,13 @@ class PlotFrame(ttk.Frame):
             self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
 
     def add_plot(self, label=None, xlabel=None, ylabel=None,):
+        """Adds a 2D line plot to the matplotlib figure.
+
+        Args:
+            label (str, optional): The label for the plot legend. Defaults to None.
+            xlabel (str, optional): The label for the x-axis. Defaults to None.
+            ylabel (str, optional): The label for the y-axis. Defaults to None.
+        """
         self.plot = self.figure.add_subplot(
             111).plot([0, 1], [0, 0], '-', label=label)[0]
         real_time_plot_ax = self.figure.get_axes()[0]
@@ -59,10 +88,21 @@ class PlotFrame(ttk.Frame):
             real_time_plot_ax.set(ylabel=ylabel)
 
     def add_image(self, image):
+        """Adds an image plot (imshow) to the matplotlib figure.
+
+        Args:
+            image: The image data to plot.
+        """
         self.image = self.figure.add_subplot(
             111).imshow(image, interpolation='none', norm='linear', origin="lower")
 
     def update_plot(self, x_data, y_data):
+        """Updates the data of an existing line plot.
+
+        Args:
+            x_data: The new x-axis data.
+            y_data: The new y-axis data.
+        """
         self.plot.set_xdata(x_data)
         self.plot.set_ydata(y_data)
         ax = self.figure.get_axes()[0]
@@ -73,6 +113,12 @@ class PlotFrame(ttk.Frame):
         self.canvas.flush_events()
 
     def update_image(self, image_data, extend=None):
+        """Updates the data of an existing image plot.
+
+        Args:
+            image_data: The new image data.
+            extend (list, optional): The extent of the image [left, right, bottom, top]. Defaults to None.
+        """
         self.image.set_data(image_data)
         self.image.autoscale()
         if extend:
@@ -85,11 +131,22 @@ class PlotFrame(ttk.Frame):
         self.canvas.flush_events()
 
     def save_figure(self, image_path):
+        """Saves the current matplotlib figure to a file.
+
+        Args:
+            image_path (str): The path to save the figure to.
+        """
         self.figure.savefig(image_path)
 
 
 class App(tk.Tk):
+    """The main application window for the STM Control GUI.
+
+    This class builds and manages the entire tkinter application, including
+    the connection to the STM, UI layout, and event handling.
+    """
     def __init__(self):
+        """Initializes the main application window and all its widgets."""
         super().__init__()
 
         # Init STM
@@ -153,6 +210,18 @@ class App(tk.Tk):
 
         class _DAC_Control(tk.Frame):
             def __init__(self, parent, text, default_value, cmd_func, convert_func, *args, **kwargs):
+                """Initializes a DAC control widget.
+
+                This widget consists of a label, a scale for value selection,
+                an entry for manual input, and a button to set the value.
+
+                Args:
+                    parent: The parent tkinter widget.
+                    text (str): The label text for the widget.
+                    default_value: The initial value for the scale.
+                    cmd_func (callable): The function to call when the set button is pressed.
+                    convert_func (callable): A function to convert the raw DAC value to a displayable format.
+                """
                 super().__init__(parent, *args, **kwargs)
                 self.cmd_func = cmd_func
                 self.convert_func = convert_func
@@ -173,16 +242,28 @@ class App(tk.Tk):
                 self.button.grid(row=0, column=0)
 
             def _update_display(self, value):
+                """Updates the display label with the converted value from the scale."""
                 self.display_var.set(
                     str(self.convert_func(int(value))))
 
             def set_value(self):
+                """Sets the DAC value by calling the command function with the value from the entry field."""
                 target = self.input_string_var.get()
                 self.cmd_func(int(target))
                 self._update_display(target)
 
         class _ButtonWithEntry(tk.Frame):
             def __init__(self, parent, text, default_value_list, cmd_func, display_list=None, entry_width=15, *args, **kwargs):
+                """Initializes a widget with a button and multiple entry fields.
+
+                Args:
+                    parent: The parent tkinter widget.
+                    text (str): The text for the button.
+                    default_value_list (list): A list of default values for the entry fields.
+                    cmd_func (callable): The function to call when the button is pressed.
+                    display_list (list, optional): A list of labels for the entry fields. Defaults to None.
+                    entry_width (int, optional): The width of the entry fields. Defaults to 15.
+                """
                 super().__init__(parent, *args, **kwargs)
                 self.input_string_var_list = []
                 self.input_entry_list = []
@@ -214,6 +295,13 @@ class App(tk.Tk):
 
         class _MultipleButtons(tk.Frame):
             def __init__(self, parent, text_list, func_list, *args, **kwargs):
+                """Initializes a widget with a row of buttons.
+
+                Args:
+                    parent: The parent tkinter widget.
+                    text_list (list): A list of strings for the button labels.
+                    func_list (list): A list of callable functions to be assigned to each button.
+                """
                 super().__init__(parent, *args, **kwargs)
                 for i in range(len(text_list)):
                     button = ttk.Button(
@@ -222,6 +310,14 @@ class App(tk.Tk):
 
         class _ScanControl(tk.Frame):
             def __init__(self, parent, cmd_func, *args, **kwargs):
+                """Initializes the scan control widget.
+
+                This widget contains entry fields for scan parameters and a button to start the scan.
+
+                Args:
+                    parent: The parent tkinter widget.
+                    cmd_func (callable): The function to call to start the scan.
+                """
                 super().__init__(parent, *args, **kwargs)
                 var_list = []
 
@@ -409,14 +505,20 @@ class App(tk.Tk):
         self.state('zoomed')
 
     def _quit(self):
+        """Properly closes the application and destroys the tkinter window."""
         self.quit()     # stops mainloop
         self.destroy()  # this is necessary on Windows to prevent
         # Fatal Python Error: PyEval_RestoreThread: NULL tstate
 
     def _reset(self):
+        """Sends a reset command to the STM controller."""
         self.stm.reset()
 
     def _update_real_time(self):
+        """Periodically updates the real-time plots with new data from the STM.
+
+        This method is called repeatedly using `after()` to create a live plot.
+        """
         if not self.stm.busy:
             status = self.stm.get_status()
             plot_x = [hist.time_millis for hist in self.stm.history]
@@ -433,6 +535,10 @@ class App(tk.Tk):
         self.after(100, self._update_real_time)
 
     def _update_images(self):
+        """Periodically updates the scan image plots with new data from the STM.
+
+        This method is called repeatedly using `after()`.
+        """
         x_start, x_end, x_resolution, y_start, y_end, y_resolution = self.stm.scan_config
         self.scan_adc_frame.update_image(self.stm.scan_adc, extend=[
             y_start, y_end, x_start, x_end])
@@ -441,6 +547,7 @@ class App(tk.Tk):
         self.after(100, self._update_images)
 
     def _plot_iv_curve(self, *args):
+        """Initiates an I-V curve measurement and plots the result."""
         iv_curve_values = self.stm.measure_iv_curve(*args)
         x_value = iv_curve_values[::2]
         y_value = iv_curve_values[1::2]

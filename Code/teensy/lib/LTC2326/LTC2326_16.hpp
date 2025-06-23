@@ -37,26 +37,55 @@ http://dberard.com/home-built-stm/
 #include <Arduino.h>
 #include <SPI.h> // include the SPI library:
 
-#define ADC_BITS 16
-const int MAX_ADC_OUT = (1 << (ADC_BITS - 1)) - 1; // DAC upper bound
-const int MIN_ADC_OUT = -(1 << (ADC_BITS - 1));    // DAC lower bound
+#define ADC_BITS 16                                  ///< ADC resolution in bits
+const int MAX_ADC_OUT = (1 << (ADC_BITS - 1)) - 1; ///< Maximum ADC output value
+const int MIN_ADC_OUT = -(1 << (ADC_BITS - 1));    ///< Minimum ADC output value
 
+/*!
+ *  @brief  Class that stores state and functions for interacting with
+ *          LTC2326-16 ADC
+ */
 class LTC2326_16
 {
 
 public:
-  LTC2326_16(byte cs, byte cnv, byte busy); // Constructor
-  void convert();                           // Initiate conversion
-  bool busy();                              // Check the status of the current conversion
-  int16_t read();                           // Read the ADC data register
-  float read_volts();                       // Read the ADC as voltage
+  /**
+   * @brief Construct a new LTC2326_16 object
+   *
+   * @param cs Chip select pin
+   * @param cnv Conversion start pin
+   * @param busy Busy status indicator pin
+   */
+  LTC2326_16(byte cs, byte cnv, byte busy);
+  /**
+   * @brief Initiate a conversion by pulsing the CNV pin.
+   */
+  void convert();
+  /**
+   * @brief Check the busy status of the ADC.
+   *
+   * @return true if a conversion is in progress, false otherwise.
+   */
+  bool busy();
+  /**
+   * @brief Read the raw 16-bit value from the ADC.
+   *
+   * @return The signed 16-bit integer result of the conversion.
+   */
+  int16_t read();
+  /**
+   * @brief Read the ADC value and convert it to a voltage.
+   *
+   * @return The voltage corresponding to the ADC reading.
+   */
+  float read_volts();
 
 private:
-  byte _cs;
-  byte _cnv;
-  byte _busy;
-  const SPISettings _spi_settings = SPISettings(40000000, MSBFIRST, SPI_MODE2);
-  const float _ref_buffer_volts = 4.096f;
+  byte _cs;   ///< Chip select pin
+  byte _cnv;  ///< Conversion start pin
+  byte _busy; ///< Busy status indicator pin
+  const SPISettings _spi_settings = SPISettings(40000000, MSBFIRST, SPI_MODE2); ///< SPI settings
+  const float _ref_buffer_volts = 4.096f; ///< Reference voltage
 };
 
 #endif // LTC2326_16_h
