@@ -1,10 +1,11 @@
-/**************************************************************************/
-/*
-
-STM Firmware for Teensy 4.1
-
-*/
-/**************************************************************************/
+/**
+ * @file stm_firmware.hpp
+ * @brief STM Firmware for Teensy 4.1
+ * 
+ * This file defines the main STM class, which encapsulates all the functionality 
+ * for controlling the scanning tunneling microscope. It also defines the hardware 
+ * pinouts, DAC and ADC configurations, and other constants.
+ */
 
 #ifndef STM_FIRMWARE_H
 #define STM_FIRMWARE_H
@@ -60,30 +61,48 @@ LTC2326_16 ltc2326 = LTC2326_16(CS_ADC, CNV, BUSY);
 class STMStatus
 {
 public:
-    int bias = 0;
-    int dac_z = 0;
-    int dac_x = 0;
-    int dac_y = 0;
-    int adc = 0;
-    int steps = 0;
-    bool is_approaching = false;
-    bool is_const_current = false;
-    bool is_scanning = false;
-    uint32_t time_millis = 0;
+    int bias = 0; /**< Bias DAC value */
+    int dac_z = 0; /**< Z DAC value */
+    int dac_x = 0; /**< X DAC value */
+    int dac_y = 0; /**< Y DAC value */
+    int adc = 0; /**< ADC reading */
+    int steps = 0; /**< Motor position */
+    bool is_approaching = false; /**< Approach flag */
+    bool is_const_current = false; /**< Constant current flag */
+    bool is_scanning = false; /**< Scanning flag */
+    uint32_t time_millis = 0; /**< Time in milliseconds */
 
+    /**
+     * @brief Converts the status to a character string.
+     * @param buffer The buffer to store the string.
+     */
     void to_char(char *buffer)
     {
         sprintf(buffer, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu", bias, dac_z, dac_x, dac_y, adc, steps, is_approaching, is_const_current, is_scanning, time_millis);
     }
 };
 
+/**
+ * @struct Approach_Config
+ * @brief Configuration for the approach routine.
+ * 
+ * This struct holds the parameters for the automated approach sequence.
+ */
 struct Approach_Config
 {
-    int target_dac;
-    int max_steps;
-    int step_interval;
+    int target_dac; /**< Target DAC value */
+    int max_steps; /**< Maximum number of motor steps */
+    int step_interval; /**< Step interval */
 };
 
+/**
+ * @brief Clamps a value between a minimum and maximum.
+ * 
+ * @param value The value to clamp.
+ * @param min_value The minimum value.
+ * @param max_value The maximum value.
+ * @return The clamped value.
+ */
 double clamp_value(double value, double min_value, double max_value)
 {
     if (value > max_value)
@@ -97,15 +116,33 @@ double clamp_value(double value, double min_value, double max_value)
     return value;
 }
 
+/**
+ * @class STM
+ * @brief Main class for controlling the STM.
+ * 
+ * This class encapsulates all the hardware control and high-level functions 
+ * for operating the STM, such as moving the motors, setting DAC values, 
+ * reading the ADC, and performing automated procedures like approach and IV curves.
+ */
 class STM
-{       // The class
-public: // Access specifier
+{
+public:
+    /**
+     * @brief Moves the stepper motor a specified number of steps.
+     * @param steps The number of steps to move. Positive values move the motor forward, negative values move it backward.
+     */
     void move_motor(int steps)
     {
         stepper_motor.step(steps);
         stm_status.steps = stepper_motor.get_total_steps();
         stm_status.time_millis = millis();
     }
+
+    /**
+     * @brief Resets the STM to its initial state.
+     * 
+     * This function resets the stepper motor position, all DACs to zero, and clears the status flags.
+     */
     void reset()
     {
         stepper_motor.setSpeed(2);
@@ -117,35 +154,60 @@ public: // Access specifier
         stm_status = STMStatus();
         ltc2326.convert();
     }
+
     // STM motors
     EfficientStepper stepper_motor = EfficientStepper(STEPS_PER_REVOLUTION, IN1, IN3, IN2, IN4);
 
     // DACs
+    /**
+     * @brief Sets the Z DAC value.
+     * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     */
     void set_dac_z(int value)
     {
         dac_z.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_z = value;
         stm_status.time_millis = millis();
     }
+
+    /**
+     * @brief Sets the X DAC value.
+     * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     */
     void set_dac_x(int value)
     {
         dac_x.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_x = value;
         stm_status.time_millis = millis();
     }
+
+    /**
+     * @brief Sets the Y DAC value.
+     * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     */
     void set_dac_y(int value)
     {
         dac_y.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_y = value;
         stm_status.time_millis = millis();
     }
+
+    /**
+     * @brief Sets the bias DAC value.
+     * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     */
     void set_dac_bias(int value)
     {
         dac_bias.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.bias = value;
         stm_status.time_millis = millis();
     }
+
     // ADC
+    /**
+     * @brief Reads a raw value from the ADC.
+     * @return The raw ADC value.
+     */
     int read_adc_raw()
     {
         int start_time = millis();
@@ -158,23 +220,45 @@ public: // Access specifier
         ltc2326.convert();
         return val;
     }
+
+    /**
+     * @brief Reads the averaged ADC value.
+     * @return The averaged ADC value.
+     */
     int read_adc()
     {
         read_adc_raw();
         return _get_adc_avg();
     }
+
+    /**
+     * @brief Updates the STM status with a new ADC reading.
+     */
     void update()
     {
         int adc_val = read_adc_raw();
         stm_status.adc = adc_val;
         stm_status.time_millis = millis();
     }
+
     // Return the adc status.
+    /**
+     * @brief Gets the current STM status.
+     * @return The STMStatus object.
+     */
     STMStatus get_status()
     {
         return stm_status;
     }
+
     Approach_Config approach_config = Approach_Config();
+
+    /**
+     * @brief Starts the automated approach sequence.
+     * @param target_adc The target ADC value to stop the approach.
+     * @param max_motor_steps The maximum number of motor steps to take.
+     * @param step_interval The number of steps to take in each iteration.
+     */
     void start_approach(int target_adc, int max_motor_steps, int step_interval)
     {
 
@@ -183,6 +267,11 @@ public: // Access specifier
         approach_config.target_dac = target_adc;
         stm_status.is_approaching = true;
     }
+
+    /**
+     * @brief Executes one step of the approach sequence.
+     * @return True if the approach is complete, false otherwise.
+     */
     bool approach()
     {
         if (stm_status.is_approaching)

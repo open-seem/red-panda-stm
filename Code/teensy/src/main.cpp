@@ -1,10 +1,25 @@
+/**
+ * @file main.cpp
+ * @brief Main firmware for the Teensy-based STM controller.
+ * 
+ * This file contains the main entry point for the firmware. It handles serial communication 
+ * for receiving commands, and calls the appropriate functions in the STM class to control 
+ * the scanning tunneling microscope.
+ */
 #include <Arduino.h>
 #include <SPI.h> // include the SPI library
 #include "stm_firmware.hpp"
 
 #define CMD_LENGTH 4
 
-// Serial Commnications
+/**
+ * @brief Processes a serial command.
+ * 
+ * This function parses the received serial command and calls the corresponding STM function.
+ * 
+ * @param command The 4-character command string.
+ * @param stm A reference to the STM object.
+ */
 void serialCommand(String command, STM &stm)
 {
 
@@ -121,6 +136,14 @@ void serialCommand(String command, STM &stm)
   }
 }
 
+/**
+ * @brief Checks for incoming serial data.
+ * 
+ * This function reads the serial port and, if a command of the correct length is received,
+ * it calls serialCommand() to process it.
+ * 
+ * @param stm A reference to the STM object.
+ */
 void checkSerial(STM &stm)
 {
   String serialString;
@@ -136,7 +159,14 @@ void checkSerial(STM &stm)
   }
 }
 
-STM stm = STM();
+STM stm = STM(); /**< The main STM control object. */
+
+/**
+ * @brief Initializes the hardware and software.
+ * 
+ * This function is called once at startup. It initializes the serial port, SPI communication,
+ * and resets the STM to a known state.
+ */
 void setup()
 {
   // initialize the serial port
@@ -153,6 +183,12 @@ void setup()
   // Init
 }
 
+/**
+ * @brief The main loop.
+ * 
+ * This function is called repeatedly. It checks for serial commands and calls the STM's update 
+ * functions to handle ongoing tasks like the approach, constant current mode, and scanning.
+ */
 void loop()
 {
   checkSerial(stm);
