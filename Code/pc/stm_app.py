@@ -11,554 +11,360 @@ import threading
 from matplotlib.backends.backend_tkagg import (
     FigureCanvasTkAgg, NavigationToolbar2Tk)
 from matplotlib.figure import Figure
-from matplotlib import rcParams
-rcParams.update({'figure.autolayout': True})
 
 
 def save_data_to_file(filename_prefix, data_to_store: list):
-    """Saves a list of data to a CSV file.
-
-    The filename is generated using the provided prefix and a timestamp.
-
-    Args:
-        filename_prefix (str): The prefix for the filename.
-        data_to_store (list): The list of data to be saved.
-    """
     current_time_stamp = datetime.now()
-    # getting the timestamp
     ts = int(datetime.timestamp(current_time_stamp)*1000)
     with open(f"{filename_prefix}_{ts}.csv", 'w', newline='') as csvfile:
-        # Writing data to a file
-        datawriter = csv.writer(csvfile, delimiter=',',
-                                quotechar='|', quoting=csv.QUOTE_MINIMAL)
+        datawriter = csv.writer(csvfile)
+        datawriter.writerow(['Voltage (V)', 'Current (A)'])
         for data in data_to_store:
             datawriter.writerow(data)
 
 
 class PlotFrame(ttk.Frame):
-    """A custom tkinter frame for embedding matplotlib plots.
-
-    This class creates a frame containing a matplotlib Figure and Canvas,
-    allowing for easy integration of plots into a tkinter application.
-    """
-    def __init__(self, parent, with_toobar=False,  dpi=300.0, width=400, height=400, *args, **kwargs):
-        """Initializes the PlotFrame.
-
-        Args:
-            parent: The parent tkinter widget.
-            with_toobar (bool, optional): Whether to include a matplotlib toolbar. Defaults to False.
-            dpi (float, optional): The DPI of the figure. Defaults to 300.0.
-            width (int, optional): The width of the figure in pixels. Defaults to 400.
-            height (int, optional): The height of the figure in pixels. Defaults to 400.
-        """
+    def __init__(self, parent, with_toobar=False,  dpi=100.0, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
-        self.figure = Figure(figsize=(width / dpi*0.8,
-                                      height / dpi*0.8), dpi=dpi)
+        self.figure = Figure(dpi=dpi, layout='tight')
 
-        # Drawing area
-        self.canvas = FigureCanvasTkAgg(
-            self.figure, master=self)
+        self.canvas = FigureCanvasTkAgg(self.figure, master=self)
         self.canvas.draw()
-        self.canvas.get_tk_widget().pack(
-            side='top', fill='both', expand=True)
+        self.canvas.get_tk_widget().pack(side='top', fill='both', expand=True)
 
         if with_toobar:
-            self.toolbar = NavigationToolbar2Tk(
-                self.canvas, self)
+            self.toolbar = NavigationToolbar2Tk(self.canvas, self, pack_toolbar=False)
             self.toolbar.update()
-            self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+            self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def add_plot(self, label=None, xlabel=None, ylabel=None,):
-        """Adds a 2D line plot to the matplotlib figure.
-
-        Args:
-            label (str, optional): The label for the plot legend. Defaults to None.
-            xlabel (str, optional): The label for the x-axis. Defaults to None.
-            ylabel (str, optional): The label for the y-axis. Defaults to None.
-        """
-        self.plot = self.figure.add_subplot(
-            111).plot([0, 1], [0, 0], '-', label=label)[0]
-        real_time_plot_ax = self.figure.get_axes()[0]
-        real_time_plot_ax.set_autoscalex_on(True)
-        real_time_plot_ax.set_autoscaley_on(True)
-        real_time_plot_ax.legend(loc='upper right')
+        self.ax = self.figure.add_subplot(111)
+        self.plot = self.ax.plot([0], [0], '-', label=label)[0]
+        self.ax.grid(True)
+        self.ax.legend(loc='upper right')
         if xlabel:
-            real_time_plot_ax.set(xlabel=xlabel)
+            self.ax.set(xlabel=xlabel)
         if ylabel:
-            real_time_plot_ax.set(ylabel=ylabel)
+            self.ax.set(ylabel=ylabel)
 
-    def add_image(self, image):
-        """Adds an image plot (imshow) to the matplotlib figure.
+    def add_image(self, image, title=None):
+        self.ax = self.figure.add_subplot(111)
+        if title:
+            self.ax.set_title(title)
+        
+        self.image = self.ax.imshow(image, interpolation='nearest', norm='linear', origin="lower", aspect='equal', cmap='jet')
+        self.cbar = self.figure.colorbar(self.image, ax=self.ax, fraction=0.046, pad=0.04)
 
-        Args:
-            image: The image data to plot.
-        """
-        self.image = self.figure.add_subplot(
-            111).imshow(image, interpolation='none', norm='linear', origin="lower")
 
     def update_plot(self, x_data, y_data):
-        """Updates the data of an existing line plot.
-
-        Args:
-            x_data: The new x-axis data.
-            y_data: The new y-axis data.
-        """
+        if not hasattr(self, 'plot'): return
         self.plot.set_xdata(x_data)
         self.plot.set_ydata(y_data)
-        ax = self.figure.get_axes()[0]
-        ax.relim()
-        ax.autoscale_view()
-        # We need to draw *and* flush
+        self.ax.relim()
+        self.ax.autoscale_view()
         self.canvas.draw()
         self.canvas.flush_events()
 
-    def update_image(self, image_data, extend=None):
-        """Updates the data of an existing image plot.
-
-        Args:
-            image_data: The new image data.
-            extend (list, optional): The extent of the image [left, right, bottom, top]. Defaults to None.
-        """
+    def update_image(self, image_data, extent=None):
+        if not hasattr(self, 'image'): return
         self.image.set_data(image_data)
-        self.image.autoscale()
-        if extend:
-            self.image.set_extent(extend)
-        # ax = self.figure.get_axes()[0]
-        # ax.relim()
-        # ax.autoscale_view()
-        # We need to draw *and* flush
+        
+        if extent:
+            self.image.set_extent(extent)
+        
+        if image_data.size > 0:
+            min_val, max_val = np.min(image_data), np.max(image_data)
+            if min_val < max_val:
+                self.image.set_clim(min_val, max_val)
+        
+        self.image.axes.autoscale_view()
         self.canvas.draw()
         self.canvas.flush_events()
 
     def save_figure(self, image_path):
-        """Saves the current matplotlib figure to a file.
-
-        Args:
-            image_path (str): The path to save the figure to.
-        """
         self.figure.savefig(image_path)
 
 
 class App(tk.Tk):
-    """The main application window for the STM Control GUI.
-
-    This class builds and manages the entire tkinter application, including
-    the connection to the STM, UI layout, and event handling.
-    """
     def __init__(self):
-        """Initializes the main application window and all its widgets."""
         super().__init__()
-
-        # Init STM
-        # STM configs
         self.stm = stm_control.STM()
-
         self.wm_title("Panda STM")
-        self.baseline_size = 700
 
-        self.image_frame = ttk.Frame(
-            self, width=self.baseline_size * 2, height=self.baseline_size * 2)
-        self.image_frame.grid(row=0, column=1, padx=10, pady=5)
+        self.is_const_current_on = False
+        
+        self.style = ttk.Style(self)
+        self.style.map('Blue.TButton',
+            background=[('active', '#00599c'), ('!disabled', '#0078d4')],
+            foreground=[('active', 'white'), ('!disabled', 'white')]
+        )
 
-        # Image frame settings
-        self.real_time_current_plot_frame = PlotFrame(
-            self.image_frame, dpi=100.0, with_toobar=True, width=self.baseline_size, height=self.baseline_size)
-        self.real_time_current_plot_frame.add_plot(
-            label="current", xlabel='time(s)', ylabel='adc')
-        self.real_time_current_plot_frame.grid(
-            row=0, column=0, padx=10, pady=5)
+        main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        main_pane.pack(fill=tk.BOTH, expand=True)
 
-        self.real_time_steps_plot_frame = PlotFrame(
-            self.image_frame, dpi=100.0,  with_toobar=True, width=self.baseline_size, height=self.baseline_size)
-        self.real_time_steps_plot_frame.add_plot(label="steps")
-        self.real_time_steps_plot_frame.grid(
-            row=0, column=1, padx=10, pady=5)
+        control_outer_frame = ttk.Frame(main_pane)
+        main_pane.add(control_outer_frame, weight=0)
+        control_outer_frame.grid_rowconfigure(0, weight=1)
+        control_outer_frame.grid_columnconfigure(0, weight=1)
+        canvas = tk.Canvas(control_outer_frame)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(control_outer_frame, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=scrollbar.set)
+        self.control_frames = ttk.Frame(canvas, padding=10)
+        canvas_frame_id = canvas.create_window((0, 0), window=self.control_frames, anchor="nw")
+        def on_frame_configure(event): canvas.configure(scrollregion=canvas.bbox("all"))
+        def on_canvas_configure(event): canvas.itemconfig(canvas_frame_id, width=event.width)
+        self.control_frames.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
 
-        # Image area for iv curve
-        self.iv_curve_frame = PlotFrame(
-            self.image_frame, dpi=100.0,  with_toobar=True, width=self.baseline_size, height=self.baseline_size)
-        self.iv_curve_frame.add_plot(
-            label="IVCurve", xlabel="Bias", ylabel="ADC")
-        self.iv_curve_frame.grid(row=1, column=1, padx=10, pady=5)
+        notebook = ttk.Notebook(main_pane)
+        main_pane.add(notebook, weight=1)
 
-        # Image area for scan image
-        # Image frame settings
-        self.scan_dacz_frame = PlotFrame(
-            self.image_frame, dpi=100.0, with_toobar=True, width=self.baseline_size, height=self.baseline_size)
-        init_image = np.random.rand(10, 10)
-        self.scan_dacz_frame.add_image(init_image)
-        self.scan_dacz_frame.grid(row=0, column=2, padx=10, pady=5)
+        curve_tab_frame = ttk.Frame(notebook, padding=5)
+        image_tab_frame = ttk.Frame(notebook, padding=5)
+        notebook.add(curve_tab_frame, text="Curves")
+        notebook.add(image_tab_frame, text="Image")
 
-        self.scan_adc_frame = PlotFrame(
-            self.image_frame, dpi=100.0, with_toobar=True, width=self.baseline_size, height=self.baseline_size)
-        init_image = np.random.rand(10, 10)
-        self.scan_adc_frame.add_image(init_image)
-        self.scan_adc_frame.grid(row=1, column=2, padx=10, pady=5)
+        curve_tab_frame.grid_columnconfigure(0, weight=1)
+        curve_tab_frame.grid_columnconfigure(1, weight=2)
+        curve_tab_frame.grid_rowconfigure(0, weight=1)
+        curve_tab_frame.grid_rowconfigure(1, weight=1)
 
+        # --- Configure Grid for Image Tab ---
+        image_tab_frame.grid_columnconfigure(0, weight=1) # First column
+        image_tab_frame.grid_columnconfigure(1, weight=1) # Second column
+        image_tab_frame.grid_rowconfigure(0, weight=1)    # Single row
+
+        # --- Place plots into the "Curves" tab ---
+        self.real_time_current_plot_frame = PlotFrame(curve_tab_frame, with_toobar=True)
+        self.real_time_current_plot_frame.add_plot(label="Current", xlabel='Time (s)', ylabel='Current (A)')
+        self.real_time_current_plot_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
+
+        self.real_time_steps_plot_frame = PlotFrame(curve_tab_frame, with_toobar=True)
+        self.real_time_steps_plot_frame.add_plot(label="Z Steps", xlabel='Time (s)', ylabel='Piezo Steps')
+        self.real_time_steps_plot_frame.grid(row=1, column=0, padx=5, pady=5, sticky='nsew')
+
+        self.iv_curve_frame = PlotFrame(curve_tab_frame, with_toobar=True)
+        self.iv_curve_frame.add_plot(label="IV Curve", xlabel="Bias (V)", ylabel="Current (A)")
+        self.iv_curve_frame.grid(row=0, column=1, padx=5, pady=5, sticky='nsew')
+
+        # --- Place plots into the "Image" tab ---
+        self.scan_dacz_frame = PlotFrame(image_tab_frame, with_toobar=True)
+        self.scan_dacz_frame.add_image(np.zeros((10, 10)), title="DAC Z Output")
+        self.scan_dacz_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew') # row 0, col 0
+        
+        self.scan_adc_frame = PlotFrame(image_tab_frame, with_toobar=True)
+        self.scan_adc_frame.add_image(np.zeros((10, 10)), title="ADC Reading (Topography)")
+        self.scan_adc_frame.grid(row=0, column=1, padx=5, pady=5, sticky='nsew') # row 0, col 1
+
+
+        self.setup_control_widgets()
         self._update_images()
+        self._update_real_time()
+        self.state('zoomed')
+        self.after_idle(lambda: main_pane.sashpos(0, 400))
 
-        # Control pannels
-        # Create left and right frames for control and display
+    def setup_control_widgets(self):
+        self.control_frames.grid_columnconfigure(0, weight=1)
         row_number = 0
-        self.control_frames = ttk.Frame(
-            self, width=self.baseline_size, height=self.baseline_size * 2)
-        self.control_frames.grid(
-            row=row_number, column=0, padx=10, pady=5, sticky=tk.NW)
 
-        button_frame = ttk.Frame(self.control_frames)
-        button_frame.grid(row=row_number, column=0, sticky=tk.W)
-
-        class _DAC_Control(tk.Frame):
+        class _DAC_Control(ttk.Frame):
             def __init__(self, parent, text, default_value, cmd_func, convert_func, *args, **kwargs):
-                """Initializes a DAC control widget.
-
-                This widget consists of a label, a scale for value selection,
-                an entry for manual input, and a button to set the value.
-
-                Args:
-                    parent: The parent tkinter widget.
-                    text (str): The label text for the widget.
-                    default_value: The initial value for the scale.
-                    cmd_func (callable): The function to call when the set button is pressed.
-                    convert_func (callable): A function to convert the raw DAC value to a displayable format.
-                """
                 super().__init__(parent, *args, **kwargs)
-                self.cmd_func = cmd_func
-                self.convert_func = convert_func
-                self.input_string_var = tk.StringVar()
-                self.input_string_var.initialize(default_value)
-                self.input_entry = tk.Entry(
-                    self, textvariable=self.input_string_var, width=15)
-                self.input_entry.grid(
-                    row=0, column=1, columnspan=1)
-
+                self.grid_columnconfigure(1, weight=1)
+                self.cmd_func, self.convert_func = cmd_func, convert_func
+                self.button = ttk.Button(self, text=text, command=self.set_value)
+                self.button.grid(row=0, column=0, sticky=tk.W, padx=(0,5))
+                self.input_string_var = tk.StringVar(value=default_value)
+                self.input_entry = ttk.Entry(self, textvariable=self.input_string_var)
+                self.input_entry.grid(row=0, column=1, sticky='ew')
                 self.display_var = tk.StringVar()
                 self._update_display(default_value)
-
-                self.display = tk.Label(self, textvariable=self.display_var)
-                self.display.grid(row=0, column=2)
-                self.button = ttk.Button(
-                    master=self, text=text, command=self.set_value)
-                self.button.grid(row=0, column=0)
-
-            def _update_display(self, value):
-                """Updates the display label with the converted value from the scale."""
-                self.display_var.set(
-                    str(self.convert_func(int(value))))
-
+                self.display = ttk.Label(self, textvariable=self.display_var, width=14, anchor='w')
+                self.display.grid(row=0, column=2, padx=5)
+            def _update_display(self, v):
+                try: self.display_var.set(f"{self.convert_func(int(v)):.4f} V")
+                except (ValueError, TypeError): self.display_var.set("Invalid Input")
             def set_value(self):
-                """Sets the DAC value by calling the command function with the value from the entry field."""
                 target = self.input_string_var.get()
-                self.cmd_func(int(target))
-                self._update_display(target)
+                self.cmd_func(int(target)); self._update_display(target)
 
-        class _ButtonWithEntry(tk.Frame):
-            def __init__(self, parent, text, default_value_list, cmd_func, display_list=None, entry_width=15, *args, **kwargs):
-                """Initializes a widget with a button and multiple entry fields.
-
-                Args:
-                    parent: The parent tkinter widget.
-                    text (str): The text for the button.
-                    default_value_list (list): A list of default values for the entry fields.
-                    cmd_func (callable): The function to call when the button is pressed.
-                    display_list (list, optional): A list of labels for the entry fields. Defaults to None.
-                    entry_width (int, optional): The width of the entry fields. Defaults to 15.
-                """
+        class _ButtonWithEntry(ttk.Frame):
+            def __init__(self, parent, text, default_value_list, cmd_func, display_list=None, *args, **kwargs):
                 super().__init__(parent, *args, **kwargs)
-                self.input_string_var_list = []
-                self.input_entry_list = []
-                self.cmd_func = cmd_func
-                row_button = 1 if display_list else 0
-                for i in range(len(default_value_list)):
-                    if display_list and display_list[i]:
-                        label = ttk.Label(master=self, text=display_list[i])
-                        label.grid(row=0, column=i+1, sticky=tk.W)
-                    input_string_var = tk.StringVar()
-                    input_string_var.initialize(default_value_list[i])
-                    input_entry = tk.Entry(
-                        self, textvariable=input_string_var, width=entry_width)
-                    input_entry.grid(
-                        row=row_button, column=i+1, columnspan=1)
-                    self.input_string_var_list.append(input_string_var)
-                    self.input_entry_list.append(input_entry)
-
-                button = ttk.Button(
-                    master=self, text=text, command=self._set_values)
-                button.grid(row=row_button, column=0)
-
-            def _set_values(self):
-                values = []
-                for i in range(len(self.input_string_var_list)):
-                    target = self.input_string_var_list[i].get()
-                    values.append(target)
-                self.cmd_func(*values)
-
-        class _MultipleButtons(tk.Frame):
+                self.grid_columnconfigure(1, weight=1)
+                self.cmd_func, self.input_string_var_list = cmd_func, []
+                button = ttk.Button(master=self, text=text, command=self._set_values)
+                button.grid(row=0, column=0, sticky=tk.W, rowspan=2 if display_list else 1, padx=(0, 5))
+                controls_frame = ttk.Frame(self)
+                controls_frame.grid(row=0, column=1, rowspan=2 if display_list else 1, sticky='ew')
+                for i, dv in enumerate(default_value_list):
+                    controls_frame.grid_columnconfigure(i, weight=1)
+                    if display_list and i < len(display_list):
+                        ttk.Label(master=controls_frame, text=display_list[i]).grid(row=0, column=i, sticky=tk.W)
+                    var = tk.StringVar(value=dv)
+                    ttk.Entry(controls_frame, textvariable=var).grid(row=1 if display_list else 0, column=i, sticky='ew', padx=1)
+                    self.input_string_var_list.append(var)
+            def _set_values(self): self.cmd_func(*[var.get() for var in self.input_string_var_list])
+        
+        class _MultipleButtons(ttk.Frame):
             def __init__(self, parent, text_list, func_list, *args, **kwargs):
-                """Initializes a widget with a row of buttons.
-
-                Args:
-                    parent: The parent tkinter widget.
-                    text_list (list): A list of strings for the button labels.
-                    func_list (list): A list of callable functions to be assigned to each button.
-                """
                 super().__init__(parent, *args, **kwargs)
-                for i in range(len(text_list)):
-                    button = ttk.Button(
-                        master=self, text=text_list[i], command=func_list[i])
-                    button.grid(row=0, column=i)
-
-        class _ScanControl(tk.Frame):
+                for i in range(len(text_list)): self.grid_columnconfigure(i, weight=1)
+                for i, (text, func) in enumerate(zip(text_list, func_list)):
+                    ttk.Button(master=self, text=text, command=func).grid(row=0, column=i, sticky='ew', padx=1)
+        
+        class _ScanControl(ttk.Frame):
             def __init__(self, parent, cmd_func, *args, **kwargs):
-                """Initializes the scan control widget.
-
-                This widget contains entry fields for scan parameters and a button to start the scan.
-
-                Args:
-                    parent: The parent tkinter widget.
-                    cmd_func (callable): The function to call to start the scan.
-                """
                 super().__init__(parent, *args, **kwargs)
-                var_list = []
+                self.grid_columnconfigure(1, weight=1)
+                self.var_list = []
+                self.scan_button = ttk.Button(self, text="Scan", command=lambda: cmd_func(*[int(v.get()) for v in self.var_list]))
+                self.scan_button.grid(row=0, column=0, rowspan=4, padx=(0,5), sticky='ns')
+                params_frame = ttk.Frame(self)
+                params_frame.grid(row=0, column=1, sticky='ew')
+                for i in range(1, 4): params_frame.grid_columnconfigure(i, weight=1)
+                labels = ["Start", "End", "Interval"]; defaults = [["31768", "33768", "512"], ["31768", "33768", "512"]]
+                ttk.Label(params_frame, text="X:").grid(row=1, column=0, sticky='e'); ttk.Label(params_frame, text="Y:").grid(row=2, column=0, sticky='e')
+                for i, label in enumerate(labels): ttk.Label(params_frame, text=label).grid(row=0, column=i+1, sticky='w')
+                for r, row_defs in enumerate(defaults):
+                    for c, val in enumerate(row_defs):
+                        var = tk.StringVar(value=val)
+                        ttk.Entry(params_frame, textvariable=var).grid(row=r+1, column=c+1, sticky='ew', padx=1)
+                        self.var_list.append(var)
+                ttk.Label(params_frame, text="Samples:").grid(row=3, column=1, sticky='e', pady=(5,0))
+                sample_var = tk.StringVar(value="10")
+                ttk.Entry(params_frame, textvariable=sample_var).grid(row=3, column=2, pady=(5,0), sticky='ew')
+                self.var_list.append(sample_var)
+        
+        def add_control_widget(widget_class, *args, **kwargs):
+            nonlocal row_number
+            widget_frame = widget_class(self.control_frames, *args, **kwargs)
+            widget_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
+            row_number += 1
+            return widget_frame
+        
+        def add_separator():
+            nonlocal row_number
+            ttk.Separator(self.control_frames, orient='horizontal').grid(row=row_number, column=0, sticky='ew', pady=5)
+            row_number += 1
 
-                def _create_entry(default_value, row, col):
-                    input_string_var = tk.StringVar()
-                    input_string_var.initialize(default_value)
-                    input_entry = tk.Entry(
-                        self, textvariable=input_string_var)
-                    input_entry.grid(
-                        row=row, column=col)
-                    return input_string_var
-
-                for row in range(2):
-                    start_var = _create_entry("31768", row, 0)
-                    end_var = _create_entry("33768", row, 1)
-                    interval_var = _create_entry("512", row, 2)
-                    var_list += [start_var, end_var, interval_var]
-                sample_num_var = _create_entry("10", 2, 1)
-                var_list += [sample_num_var]
-
-                def _set_values():
-                    values = []
-                    for var in var_list:
-                        target = int(var.get())
-                        values.append(target)
-                    cmd_func(*values)
-                # Control Button
-                button = ttk.Button(
-                    master=self, text="Scan", command=_set_values)
-                button.grid(row=2, column=0, sticky=tk.W)
-
-        open_frame = _ButtonWithEntry(button_frame,  "Open", [
-            "COM7"],  self.stm.open)
-        open_frame.grid(row=row_number, column=0, pady=5, sticky=tk.W)
+        add_control_widget(_ButtonWithEntry, "Open", ["COM6"], self.stm.open)
+        add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear"], [self.stm.stop, self.stm.reset, self.stm.clear])
+        add_separator()
+        add_control_widget(_DAC_Control, "Bias", "33314", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts)
+        add_control_widget(_DAC_Control, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts)
+        add_control_widget(_DAC_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts)
+        add_control_widget(_DAC_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts)
+        add_separator()
+        add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Delay"])
+        add_control_widget(_ButtonWithEntry, "Plot IV", ["31768", "33768", "10"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
+        add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
+        add_separator()
+        add_control_widget(_ButtonWithEntry, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, display_list=["Kp", "Ki", "Kd"])
+        
+        const_current_frame = ttk.Frame(self.control_frames)
+        const_current_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
+        const_current_frame.grid_columnconfigure(1, weight=1)
+        self.const_current_button = ttk.Button(const_current_frame, text="ConstCurrent On", command=self.toggle_const_current)
+        self.const_current_button.grid(row=0, column=0, sticky='w', padx=(0,5))
+        self.const_current_target_var = tk.StringVar(value="1000")
+        const_current_entry = ttk.Entry(const_current_frame, textvariable=self.const_current_target_var, width=15)
+        const_current_entry.grid(row=0, column=1, sticky='ew')
         row_number += 1
+        
+        add_separator()
 
-        _stop_rest_clear = _MultipleButtons(button_frame, ["STOP", "Reset", "Clear"], [
-                                            self.stm.stop, self.stm.reset, self.stm.clear])
-        _stop_rest_clear.grid(row=row_number, column=0,
-                              sticky=tk.W)
-        row_number += 1
+        scan_control_widget = add_control_widget(_ScanControl, self.start_scan_thread)
+        self.scan_button = scan_control_widget.scan_button
+        add_control_widget(_ButtonWithEntry, "Save Scan", ["./data/image"], self._save_scan_image)
+        add_separator()
+        
+        self.status_label = ttk.Label(self.control_frames, text="No Updates", relief=tk.RAISED, anchor='w', wraplength=380)
+        self.status_label.grid(row=row_number, column=0, sticky='ew', pady=(10,0))
 
-        # Set Bias
-        bias_control = _DAC_Control(
-            button_frame, "Bias", "33314", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts)
-        bias_control.grid(row=row_number, column=0,
-                          sticky=tk.W, pady=5)
-        row_number += 1
-        dacz_control = _DAC_Control(
-            button_frame, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts)
-        dacz_control.grid(row=row_number, column=0, pady=5,
-                          sticky=tk.W)
-        row_number += 1
-        dacx_control = _DAC_Control(
-            button_frame, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts)
-        dacx_control.grid(row=row_number, column=0, pady=5,
-                          sticky=tk.W)
-        row_number += 1
-        dacy_control = _DAC_Control(
-            button_frame, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts)
-        dacy_control.grid(row=row_number, column=0, pady=5,
-                          sticky=tk.W)
-        row_number += 1
-        # Set DACZ
+    def toggle_const_current(self):
+        if self.is_const_current_on:
+            self.stm.turn_off_const_current()
+            self.const_current_button.configure(style='TButton')
+            self.is_const_current_on = False
+        else:
+            try:
+                target_adc = int(self.const_current_target_var.get())
+                self.stm.turn_on_const_current(target_adc)
+                self.const_current_button.configure(style='Blue.TButton')
+                self.is_const_current_on = True
+            except (ValueError, TypeError) as e:
+                print(f"Invalid ADC target value for constant current: {e}")
 
-        def _set_all_dac():
-            bias_control.set_value()
-            time.sleep(0.01)
-            dacz_control.set_value()
-            time.sleep(0.01)
-            dacx_control.set_value()
-            time.sleep(0.01)
-            dacy_control.set_value()
-            time.sleep(0.01)
+    def start_scan_thread(self, *args):
+        self.scan_button.configure(style='Blue.TButton', state=tk.DISABLED)
+        scan_thread = threading.Thread(target=self._scan_task, args=args, daemon=True)
+        scan_thread.start()
 
-        # Set All DACs
-        set_all_dac_button = ttk.Button(
-            master=button_frame, text="SetAllDAC", command=_set_all_dac)
-        set_all_dac_button.grid(row=row_number, column=0, pady=5, sticky=tk.W)
-        row_number += 1
+    def _scan_task(self, *args):
+        try:
+            self.stm.start_scan(*args)
+        finally:
+            self.after(0, self._on_scan_complete)
 
-        # Approach
-        # Set Approach
-        approach_frame = _ButtonWithEntry(button_frame,  "Approach", [
-                                          "500", "1"],  self.stm.approach)
-        approach_frame.grid(row=row_number, column=0, pady=5,
-                            sticky=tk.W)
-        row_number += 1
-
-        # Create a IV Curve Scan control
-        iv_curve_frame = _ButtonWithEntry(button_frame,  "PlotIV", [
-                                          "31768", "33768", "10"], self._plot_iv_curve)
-        iv_curve_frame.grid(row=row_number, column=0, pady=5,
-                            sticky=tk.W)
-        row_number = row_number + 1
-
-        # Store the IV Curve to a file
-        def _save_iv_curve(filename_prefix):
-            iv_curve_values = self.stm.get_iv_curve()
-            x_value = iv_curve_values[::2]
-            y_value = iv_curve_values[1::2]
-            save_data_to_file(filename_prefix, zip(x_value, y_value))
-
-        save_curve_frame = _ButtonWithEntry(button_frame,  "Save", [
-            "./data/iv_curve_"], _save_iv_curve, entry_width=25)
-        save_curve_frame.grid(row=row_number, column=0, pady=5,
-                              sticky=tk.W)
-        row_number = row_number + 1
-
-        # Const Current Mode
-        # Setup PID Values
-        row_number += 1
-        pid_frame = _ButtonWithEntry(button_frame,  "SetPID", [
-            "0.0001", "0.0001", "0.0"], self.stm.set_pid, display_list=["Kp", "Ki", "Kd"])
-        pid_frame.grid(row=row_number, column=0, pady=5,
-                       sticky=tk.W)
-        row_number = row_number + 1
-        # Control const current mode
-        start_cons_current_frame = _ButtonWithEntry(button_frame,  "ConstCurrentOn", [
-            "1000"], self.stm.turn_on_const_current)
-        start_cons_current_frame.grid(row=row_number, column=0, pady=5,
-                                      sticky=tk.W)
-        row_number = row_number + 1
-        stop_cons_current_frame = _ButtonWithEntry(
-            button_frame,  "ConstCurrentOFF", [], self.stm.turn_off_const_current)
-        stop_cons_current_frame.grid(row=row_number, column=0, pady=5,
-                                     sticky=tk.W)
-        row_number = row_number + 1
-
-        # Scan start button
-        def _scan_and_plot(*arg):
-            scan_thread = threading.Thread(
-                target=self.stm.start_scan, args=arg)
-            scan_thread.start()
-            print("Updated")
-
-        scan_button_frame = _ScanControl(
-            button_frame, _scan_and_plot)
-        scan_button_frame.grid(row=row_number, column=0, pady=5,
-                               sticky=tk.W)
-        row_number = row_number + 1
-
-        # Store the Scan Images to files
-        def _save_scan_image(image_path_prefix):
-            current_time_stamp = datetime.now()
-            # getting the timestamp
-            ts = int(datetime.timestamp(current_time_stamp)*1000)
-            np.savetxt(f"{image_path_prefix}_adc_{ts}.txt", self.stm.scan_adc)
-            np.savetxt(f"{image_path_prefix}_dacz_{ts}.txt",
-                       self.stm.scan_dacz)
-            self.scan_adc_frame.save_figure(
-                f"{image_path_prefix}_adc_{ts}.png")
-            self.scan_dacz_frame.save_figure(
-                f"{image_path_prefix}_dacz_{ts}.png")
-
-        save_image_frame = _ButtonWithEntry(button_frame,  "Save", [
-            "./data/image"], _save_scan_image, entry_width=25)
-        save_image_frame.grid(row=row_number, column=0, pady=5,
-                              sticky=tk.W)
-        row_number = row_number + 1
-
-        # Add command and send
-        # Create text widget and specify size.
-        cmd_text_box = tk.Text(button_frame, height=1, width=30)
-        cmd_text_box.grid(row=row_number, column=0, pady=5)
-
-        def _send_cmd():
-            cmd = cmd_text_box.get("1.0", tk.END)
-            self.stm.send_cmd(cmd)
-        row_number += 1
-        send_button = ttk.Button(
-            master=button_frame, text="Send", command=_send_cmd)
-        send_button.grid(row=row_number, column=0)
-
-        # Area for showing status
-        self.status_frame = ttk.Frame(self.control_frames)
-        self.status_frame.grid(row=1, column=0)
-
-        self.status_label = ttk.Label(self.status_frame,
-                                      text="No Updates", relief=tk.RAISED)
-        self.status_label.grid(row=0, column=0)
-
-        self._update_real_time()
-        # Default put the windows to be largest.
-        self.state('zoomed')
+    def _on_scan_complete(self):
+        self.scan_button.configure(style='TButton', state=tk.NORMAL)
 
     def _quit(self):
-        """Properly closes the application and destroys the tkinter window."""
-        self.quit()     # stops mainloop
-        self.destroy()  # this is necessary on Windows to prevent
-        # Fatal Python Error: PyEval_RestoreThread: NULL tstate
+        self.quit(); self.destroy()
 
     def _reset(self):
-        """Sends a reset command to the STM controller."""
         self.stm.reset()
 
     def _update_real_time(self):
-        """Periodically updates the real-time plots with new data from the STM.
-
-        This method is called repeatedly using `after()` to create a live plot.
-        """
         if not self.stm.busy:
             status = self.stm.get_status()
-            plot_x = [hist.time_millis for hist in self.stm.history]
-            self.status_label.config(text=status.to_string())
-            max_time = max(plot_x)
-            plot_x = [(x - max_time) / self.baseline_size *
-                      2.0 for x in plot_x]
-            plot_adc = [stm_control.STM_Status.adc_to_amp(
-                hist.adc) for hist in self.stm.history]
-            plot_steps = [hist.steps for hist in self.stm.history]
-
-            self.real_time_current_plot_frame.update_plot(plot_x, plot_adc)
-            self.real_time_steps_plot_frame.update_plot(plot_x, plot_steps)
-        self.after(100, self._update_real_time)
+            if self.stm.history:
+                self.status_label.config(text=status.to_string())
+                plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
+                plot_adc = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
+                plot_steps = [h.steps for h in self.stm.history]
+                self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_adc)
+                self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
+        self.after(200, self._update_real_time)
 
     def _update_images(self):
-        """Periodically updates the scan image plots with new data from the STM.
-
-        This method is called repeatedly using `after()`.
-        """
-        x_start, x_end, x_resolution, y_start, y_end, y_resolution = self.stm.scan_config
-        self.scan_adc_frame.update_image(self.stm.scan_adc, extend=[
-            y_start, y_end, x_start, x_end])
-        self.scan_dacz_frame.update_image(
-            self.stm.scan_dacz, [y_start, y_end, x_start, x_end])
-        self.after(100, self._update_images)
+        if np.any(self.stm.scan_adc):
+            # Since axes are off, extent is not visually used, but we can pass it anyway
+            self.scan_adc_frame.update_image(self.stm.scan_adc)
+            self.scan_dacz_frame.update_image(self.stm.scan_dacz)
+        self.after(200, self._update_images)
 
     def _plot_iv_curve(self, *args):
-        """Initiates an I-V curve measurement and plots the result."""
-        iv_curve_values = self.stm.measure_iv_curve(*args)
-        x_value = iv_curve_values[::2]
-        y_value = iv_curve_values[1::2]
-        current = [stm_control.STM_Status.adc_to_amp(adc) for adc in y_value]
-        bias = [stm_control.STM_Status.dac_to_bias_volts(
-            dac) for dac in x_value]
-        self.iv_curve_frame.update_plot(bias, current)
+        try:
+            int_args = [int(arg) for arg in args]
+            iv_values = self.stm.measure_iv_curve(*int_args)
+            if not iv_values: return
+            bias = [stm_control.STM_Status.dac_to_bias_volts(d) for d in iv_values[::2]]
+            current = [stm_control.STM_Status.adc_to_amp(a) for a in iv_values[1::2]]
+            self.iv_curve_frame.update_plot(bias, current)
+        except Exception as e:
+            print(f"Error plotting IV curve: {e}")
+            
+    def _save_iv_curve(self, filename_prefix):
+        iv_values = self.stm.get_iv_curve()
+        if not iv_values: return print("No IV curve data to save.")
+        x = [stm_control.STM_Status.dac_to_bias_volts(d) for d in iv_values[::2]]
+        y = [stm_control.STM_Status.adc_to_amp(a) for a in iv_values[1::2]]
+        save_data_to_file(filename_prefix, zip(x, y))
+        print(f"IV curve data saved with prefix {filename_prefix}")
+        
+    def _save_scan_image(self, image_path_prefix):
+        ts = int(datetime.timestamp(datetime.now())*1000)
+        np.savetxt(f"{image_path_prefix}_adc_{ts}.txt", self.stm.scan_adc)
+        np.savetxt(f"{image_path_prefix}_dacz_{ts}.txt", self.stm.scan_dacz)
+        self.scan_adc_frame.save_figure(f"{image_path_prefix}_adc_{ts}.png")
+        self.scan_dacz_frame.save_figure(f"{image_path_prefix}_dacz_{ts}.png")
+        print(f"Scan images and data saved with prefix {image_path_prefix}")
 
-
-# If you put root.destroy() here, it will cause an error if the window is
-# closed with the window manager.
 if __name__ == "__main__":
     app = App()
+    app.protocol("WM_DELETE_WINDOW", app._quit)
     app.mainloop()
