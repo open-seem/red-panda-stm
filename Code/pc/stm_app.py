@@ -68,10 +68,6 @@ class PlotFrame(ttk.Frame):
     def update_image(self, image_data, extent=None):
         if not hasattr(self, 'image'): return
         self.image.set_data(image_data)
-        
-        if extent:
-            self.image.set_extent(extent)
-        
         if image_data.size > 0:
             min_val, max_val = np.min(image_data), np.max(image_data)
             if min_val < max_val:
@@ -90,7 +86,6 @@ class App(tk.Tk):
         super().__init__()
         self.stm = stm_control.STM()
         self.wm_title("Panda STM")
-
         self.is_const_current_on = False
         
         self.style = ttk.Style(self)
@@ -251,7 +246,9 @@ class App(tk.Tk):
             row_number += 1
 
         add_control_widget(_ButtonWithEntry, "Open", ["COM6"], self.stm.open)
-        add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear"], [self.stm.stop, self.stm.reset, self.stm.clear])
+        # --- NEW: Added "Help" button ---
+        add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear", "Help"],
+                           [self.stm.stop, self.stm.reset, self.stm.clear, self.show_help_window])
         add_separator()
         add_control_widget(_DAC_Control, "Bias", "33314", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts)
         add_control_widget(_DAC_Control, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts)
@@ -263,7 +260,6 @@ class App(tk.Tk):
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()
         add_control_widget(_ButtonWithEntry, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, display_list=["Kp", "Ki", "Kd"])
-        
         const_current_frame = ttk.Frame(self.control_frames)
         const_current_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
         const_current_frame.grid_columnconfigure(1, weight=1)
@@ -284,7 +280,85 @@ class App(tk.Tk):
         self.status_label = ttk.Label(self.control_frames, text="No Updates", relief=tk.RAISED, anchor='w', wraplength=380)
         self.status_label.grid(row=row_number, column=0, sticky='ew', pady=(10,0))
 
+    def show_help_window(self):
+        help_win = tk.Toplevel(self)
+        help_win.title("STM Controller Help")
+        help_win.geometry("600x700")
+
+        # --- Create a scrollable frame inside the help window ---
+        outer_frame = ttk.Frame(help_win)
+        outer_frame.pack(fill='both', expand=True)
+        outer_frame.grid_rowconfigure(0, weight=1)
+        outer_frame.grid_columnconfigure(0, weight=1)
+        canvas = tk.Canvas(outer_frame)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=scrollbar.set)
+        content_frame = ttk.Frame(canvas, padding=15)
+        canvas_frame_id = canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        def on_frame_cfg(e): canvas.configure(scrollregion=canvas.bbox("all"))
+        def on_canvas_cfg(e): canvas.itemconfig(canvas_frame_id, width=e.width)
+        content_frame.bind("<Configure>", on_frame_cfg)
+        canvas.bind("<Configure>", on_canvas_cfg)
+        
+        # --- Populate the help content ---
+        row = 0
+        def add_help_section(heading, body):
+            nonlocal row
+            # Heading
+            head_style = ttk.Style()
+            head_style.configure("Heading.TLabel", font=('Helvetica', 12, 'bold'))
+            head_label = ttk.Label(content_frame, text=heading, style="Heading.TLabel")
+            head_label.grid(row=row, column=0, sticky='w', pady=(15, 2))
+            row += 1
+            # Body
+            body_label = ttk.Label(content_frame, text=body, wraplength=550, justify=tk.LEFT)
+            body_label.grid(row=row, column=0, sticky='w', padx=10, pady=(0, 5))
+            row += 1
+            # Separator
+            ttk.Separator(content_frame, orient='horizontal').grid(row=row, column=0, sticky='ew', pady=10)
+            row += 1
+
+        # --- CONTENT ---
+        add_help_section("Connection & General",
+            "• Open: Connects to the STM hardware via the specified serial (COM) port.\n"
+            "• STOP: Immediately halts any active process (like Approach or Scan).\n"
+            "• Reset: Sends a reset command to the microcontroller.\n"
+            "• Clear: Clears internal data buffers in the controller and plot history in the app.")
+
+        add_help_section("DAC Controls",
+            "These controls directly set the raw value (0-65535 for 16-bit) for the Digital-to-Analog Converters, which control voltages. The calculated output voltage is shown to the right.\n"
+            "• Bias: Sets the voltage difference between the tip and the sample. This is critical for tunneling.\n"
+            "• DACZ: Controls the fine Z-axis (height) of the piezo scanner.\n"
+            "• DACX / DACY: Controls the X and Y position of the piezo scanner.")
+
+        add_help_section("Automated Procedures",
+            "• Approach: Starts an automated tip approach. The tip moves towards the sample until a target current is detected.\n"
+            "   - Target: The ADC value representing the desired tunneling current to stop at.\n"
+            "   - Delay: A delay parameter (in milliseconds) used within the approach loop.\n\n"
+            "• Plot IV: Performs current-voltage (I-V) spectroscopy. It sweeps the bias voltage and measures the resulting current, then plots the result in the 'Curves' tab.\n"
+            "   - Start / End: The DAC values for the beginning and end of the bias voltage sweep.\n"
+            "   - Steps: The number of data points to measure during the sweep.")
+
+        add_help_section("Feedback and Scanning",
+            "• Set PID: Sets the gains for the Z-axis feedback loop, which is essential for constant-current imaging.\n"
+            "   - Kp (Proportional): Responds to the current error.\n"
+            "   - Ki (Integral): Corrects long-term, steady-state errors.\n"
+            "   - Kd (Derivative): Dampens oscillations.\n\n"
+            "• ConstCurrent On: Engages the PID feedback loop to maintain a constant tunneling current by adjusting the Z-height.\n"
+            "   - Target ADC: The desired current (as a raw ADC value) for the feedback loop to maintain.\n\n"
+            "• Scan: Starts a raster scan of the surface. Requires constant current mode to be active.\n"
+            "   - X/Y Start / End: Defines the corners of the scan area in DAC units.\n"
+            "   - Interval: The step size in DAC units between pixels. Smaller values = higher resolution.\n"
+            "   - Samples: The number of ADC readings to average at each pixel to reduce noise.")
+
+        add_help_section("Data Saving",
+            "• Save IV: Saves the most recently measured I-V curve to a .csv file.\n"
+            "• Save Scan: Saves the most recent scan data. Two text files (.txt) for ADC and Z-DAC values are created, along with two corresponding image files (.png).")
+
     def toggle_const_current(self):
+        # ... (implementation unchanged)
         if self.is_const_current_on:
             self.stm.turn_off_const_current()
             self.const_current_button.configure(style='TButton')
@@ -332,7 +406,6 @@ class App(tk.Tk):
 
     def _update_images(self):
         if np.any(self.stm.scan_adc):
-            # Since axes are off, extent is not visually used, but we can pass it anyway
             self.scan_adc_frame.update_image(self.stm.scan_adc)
             self.scan_dacz_frame.update_image(self.stm.scan_dacz)
         self.after(200, self._update_images)
