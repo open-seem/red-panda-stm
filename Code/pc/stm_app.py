@@ -255,7 +255,7 @@ class App(tk.Tk):
         add_control_widget(_DAC_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts)
         add_control_widget(_DAC_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts)
         add_separator()
-        add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Delay"])
+        add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Steps"])
         add_control_widget(_ButtonWithEntry, "Plot IV", ["31768", "33768", "10"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()
@@ -336,7 +336,7 @@ class App(tk.Tk):
         add_help_section("Automated Procedures",
             "• Approach: Starts an automated tip approach. The tip moves towards the sample until a target current is detected.\n"
             "   - Target: The ADC value representing the desired tunneling current to stop at.\n"
-            "   - Delay: A delay parameter (in milliseconds) used within the approach loop.\n\n"
+            "   - Steps: The number of steps for the approach motor.\n\n"
             "• Plot IV: Performs current-voltage (I-V) spectroscopy. It sweeps the bias voltage and measures the resulting current, then plots the result in the 'Curves' tab.\n"
             "   - Start / End: The DAC values for the beginning and end of the bias voltage sweep.\n"
             "   - Steps: The number of data points to measure during the sweep.")
