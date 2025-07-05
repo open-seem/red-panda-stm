@@ -245,6 +245,11 @@ class STM(object):
         """Sends a command to stop any ongoing operation on the STM."""
         self.send_cmd('STOP')
 
+    def stepper_stop(self):
+        """Sends a command to stop the stepper motor."""
+        self.send_cmd('STPS')
+
+
     def measure_iv_curve(self, dac_start, dac_end, dac_step):
         """Initiates an I-V curve measurement and retrieves the data.
 

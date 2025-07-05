@@ -42,6 +42,10 @@ void serialCommand(String command, STM &stm)
       int value = Serial.parseInt();
       stm.move_motor(value);
     }
+    if (command == "STPS")
+    {
+      stm.stop_motor();
+    }
     // DAC control
     if (command == "DACX")
     {
