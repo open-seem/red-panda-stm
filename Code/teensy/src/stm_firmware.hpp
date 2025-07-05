@@ -575,8 +575,8 @@ private:
      static const uint16_t MODE_Y = 0b0000000001000010;
      // Output range: -10V to +10V (RA=000), Two's Complement (B2C=1)
      static const uint16_t MODE_Z = 0b0000000001000000;
-     // Output range: -3V to +3V (RA=101), Two's Complement (B2C=1)
-     static const uint16_t MODE_BIAS = 0b0000000001000101;
+     // Output range: 0V to +3V (RA=110), Straight Binary (B2C=0)
+     static const uint16_t MODE_BIAS = 0b0000000000000110;
  
     // DAC Settings
      AD5761 dac_x = AD5761(DAC_1, MODE_X);

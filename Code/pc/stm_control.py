@@ -112,7 +112,8 @@ class STM_Status:
         Returns:
             float: The corresponding bias voltage.
         """
-        return 1.0 * (dac - 32768) / 32768 * 3.0
+        # Unipolar 0V to +3V range
+        return 3.0 * dac / 65535.0
 
     def to_string(self):
         """Return a formatted string representation of the STM status.
