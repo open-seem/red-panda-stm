@@ -164,26 +164,58 @@ class App(tk.Tk):
         self.control_frames.grid_columnconfigure(0, weight=1)
         row_number = 0
 
-        class _DAC_Control(ttk.Frame):
-            def __init__(self, parent, text, default_value, cmd_func, convert_func, *args, **kwargs):
+        class _DAC_Slider_Control(ttk.Frame):
+            def __init__(self, parent, text, default_value, cmd_func, convert_func, from_, to, *args, **kwargs):
                 super().__init__(parent, *args, **kwargs)
                 self.grid_columnconfigure(1, weight=1)
                 self.cmd_func, self.convert_func = cmd_func, convert_func
-                self.button = ttk.Button(self, text=text, command=self.set_value)
-                self.button.grid(row=0, column=0, sticky=tk.W, padx=(0,5))
-                self.input_string_var = tk.StringVar(value=default_value)
-                self.input_entry = ttk.Entry(self, textvariable=self.input_string_var)
-                self.input_entry.grid(row=0, column=1, sticky='ew')
+                self.variable = tk.DoubleVar(value=default_value)
+
+                self.label = ttk.Label(self, text=text, width=5)
+                self.label.grid(row=0, column=0, sticky=tk.W)
+
+                self.slider = ttk.Scale(self, from_=from_, to=to, orient=tk.HORIZONTAL, variable=self.variable, command=self._on_slider_change)
+                self.slider.grid(row=0, column=1, sticky='ew', padx=5)
+
+                self.input_string_var = tk.StringVar(value=str(default_value))
+                self.input_entry = ttk.Entry(self, textvariable=self.input_string_var, width=7)
+                self.input_entry.grid(row=0, column=2, padx=5)
+                self.input_entry.bind('<Return>', self._on_entry_set)
+                self.input_entry.bind('<FocusOut>', self._on_entry_set)
+
                 self.display_var = tk.StringVar()
+                self.display = ttk.Label(self, textvariable=self.display_var, width=10, anchor='w')
+                self.display.grid(row=0, column=3, padx=5)
+                
                 self._update_display(default_value)
-                self.display = ttk.Label(self, textvariable=self.display_var, width=14, anchor='w')
-                self.display.grid(row=0, column=2, padx=5)
-            def _update_display(self, v):
-                try: self.display_var.set(f"{self.convert_func(int(v)):.4f} V")
-                except (ValueError, TypeError): self.display_var.set("Invalid Input")
-            def set_value(self):
-                target = self.input_string_var.get()
-                self.cmd_func(int(target)); self._update_display(target)
+
+            def _on_slider_change(self, value_str):
+                value = int(float(value_str))
+                self.input_string_var.set(str(value))
+                self._update_display(value)
+                self.cmd_func(value)
+
+            def _on_entry_set(self, event=None):
+                try:
+                    value = int(self.input_string_var.get())
+                    from_ = self.slider.cget('from')
+                    to = self.slider.cget('to')
+                    if value < from_: value = int(from_)
+                    if value > to: value = int(to)
+                    self.variable.set(value)
+                    self.input_string_var.set(str(value))
+                    self._update_display(value)
+                    self.cmd_func(value)
+                except (ValueError, TypeError):
+                    current_val = int(self.variable.get())
+                    self.input_string_var.set(str(current_val))
+
+            def _update_display(self, value):
+                try:
+                    voltage = self.convert_func(int(value))
+                    self.display_var.set(f"{voltage:.4f} V")
+                except (ValueError, TypeError):
+                    self.display_var.set("Invalid")
 
         class _ButtonWithEntry(ttk.Frame):
             def __init__(self, parent, text, default_value_list, cmd_func, display_list=None, *args, **kwargs):
@@ -222,7 +254,8 @@ class App(tk.Tk):
                 for i in range(1, 4): params_frame.grid_columnconfigure(i, weight=1)
                 labels = ["Start", "End", "Interval"]; defaults = [["31768", "33768", "512"], ["31768", "33768", "512"]]
                 ttk.Label(params_frame, text="X:").grid(row=1, column=0, sticky='e'); ttk.Label(params_frame, text="Y:").grid(row=2, column=0, sticky='e')
-                for i, label in enumerate(labels): ttk.Label(params_frame, text=label).grid(row=0, column=i+1, sticky='w')
+                for i, label in enumerate(labels):
+                    ttk.Label(params_frame, text=label).grid(row=0, column=i+1, sticky='w')
                 for r, row_defs in enumerate(defaults):
                     for c, val in enumerate(row_defs):
                         var = tk.StringVar(value=val)
@@ -250,10 +283,10 @@ class App(tk.Tk):
         add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear", "Help"],
                            [self.stm.stop, self.stm.reset, self.stm.clear, self.show_help_window])
         add_separator()
-        add_control_widget(_DAC_Control, "Bias", "32768", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts)
-        add_control_widget(_DAC_Control, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts)
-        add_control_widget(_DAC_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts)
-        add_control_widget(_DAC_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts)
+        add_control_widget(_DAC_Slider_Control, "Bias", "32768", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts, from_=0, to=65535)
+        add_control_widget(_DAC_Slider_Control, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts, from_=0, to=65535)
+        add_control_widget(_DAC_Slider_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts, from_=0, to=65535)
+        add_control_widget(_DAC_Slider_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts, from_=0, to=65535)
         add_separator()
         add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Steps"])
         add_control_widget(_MultipleButtons, ["Stepper Stop"], [self.stm.stepper_stop])
