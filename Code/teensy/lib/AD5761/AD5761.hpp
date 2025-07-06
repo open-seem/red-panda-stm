@@ -8,7 +8,6 @@
     @section  HISTORY
 
     v1.0 - First release
-    v1.1 - Corrected bugs related to SPI command formatting and data coding.
 */
 /**************************************************************************/
 
@@ -19,7 +18,7 @@
 #include <SPI.h>
 
 /*=========================================================================
-    INPUT SHIFT REGISTER COMMANDS (4-BIT VALUES)
+    INPUT SHIFT REGISTER COMMANDS
     -----------------------------------------------------------------------*/
 #define CMD_NOP 0x0             ///< No operation
 #define CMD_WR_TO_INPUT_REG 0x1 ///< Write to Input Register n
@@ -40,51 +39,48 @@
 /*=========================================================================*/
 
 /*!
- * @brief  Class that stores state and functions for interacting with
- * AD5761 DAC
+ *  @brief  Class that stores state and functions for interacting with
+ *          AD5761 DAC
  */
 class AD5761
 {
 
 public:
+  // mode
+  // 0b0000000101000 -10V, +10V
+  // 0b0000000101101 -3 to 3V
   /**
    * @brief Construct a new AD5761 object
    *
    * @param cs The chip select pin
-   * @param mode The 16-bit control register setting. Determines voltage range and data coding.
-   *
-   * @note Example Control Register Mode Bits (see datasheet Table 11 & 12):
-   * RA[2:0] (Range):
-   * - 0b000: +/-10V
-   * - 0b010: +/-5V
-   * - 0b101: +/-3V
-   * B2C (Coding):
-   * - Bit 6 = 1 for Two's Complement
-   * - Bit 6 = 0 for Straight Binary
+   * @param mode The control register mode setting. Determines voltage range.
    */
   AD5761(byte cs, uint16_t mode);
 
   /**
    * @brief Write data to a register
    *
-   * @param reg_addr_cmd The 4-bit command (see command definitions)
+   * @param reg_addr_cmd The command byte, including the register address
    * @param reg_data The 16-bit data to write
    */
   void write(uint8_t reg_addr_cmd, uint16_t reg_data);
-
+  /**
+   * @brief Set the output voltage
+   *
+   * @param voltage The desired output voltage. The valid range depends on the mode.
+   */
+  void write_volt(float voltage);
   /**
    * @brief Read data from a register
    *
-   * @param reg_addr_cmd The 4-bit read command
-   * @return The 24-bit word read from the device.
+   * @param reg_addr_cmd The command byte, including the register address
    */
-  uint32_t read(uint8_t reg_addr_cmd);
+  void read(uint8_t reg_addr_cmd);
 
   /**
    * @brief Initialize the SPI communication
    */
   void spi_init();
-  
   /**
    * @brief Reset the device and set its operating mode
    */
@@ -93,7 +89,8 @@ public:
 private:
   byte _cs;         ///< Chip select pin
   uint16_t _mode;   ///< Control register mode setting
-  SPISettings _spi_settings = SPISettings(50000000, MSBFIRST, SPI_MODE2); ///< SPI settings for AD5761
+  SPISettings _spi_settings = SPISettings(40000000, MSBFIRST, SPI_MODE2); ///< SPI settings
+  byte _spi_buffer[3]; ///< Buffer for SPI communication
 };
 
 #endif

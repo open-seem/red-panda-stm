@@ -42,7 +42,6 @@ AD5761::AD5761(byte cs, uint16_t mode)
 void AD5761::spi_init()
 {
     pinMode(_cs, OUTPUT); // Set the SS0 pin as an output
-    digitalWrite(_cs, HIGH);
     SPI.begin();          // Begin SPI hardware
     delay(100);
     // AD5761 software reset
@@ -76,24 +75,19 @@ void AD5761::reset()
  * This function writes a 16-bit value to the specified register.
  * It begins an SPI transaction, sets the chip select pin low, and transfers the command and data bytes.
  */
-
 void AD5761::write(uint8_t reg_addr_cmd, uint16_t reg_data)
 {
-    // The AD5761 expects a 24-bit message.
-    // The input shift register format is defined in Table 8 of the datasheet.
-    // Byte 1 (DB23-DB16): Contains the 4-bit command in DB19-DB16. DB20 must be 0.
-    // The command definitions (e.g., CMD_WR_CTRL_REG = 0x4) are the 4-bit values.
-    // Therefore, the first byte is simply the command itself, as the upper bits are don't care.
-    byte spi_buffer[3];
-    spi_buffer[0] = reg_addr_cmd;
-    spi_buffer[1] = (reg_data >> 8);
-    spi_buffer[2] = (reg_data & 0xFF);
-
+    uint8_t data[3];
     SPI.beginTransaction(_spi_settings);
     digitalWrite(_cs, LOW);
-    SPI.transfer(spi_buffer, 3);
+    data[0] = reg_addr_cmd;
+    data[1] = (reg_data & 0xFF00) >> 8;
+    data[2] = (reg_data & 0x00FF) >> 0;
+    for (int i = 0; i < 3; i++)
+    {
+        SPI.transfer(data[i]);
+    }
     digitalWrite(_cs, HIGH);
-    SPI.endTransaction();
 }
 
 /**
