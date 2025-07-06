@@ -82,6 +82,44 @@ class PlotFrame(ttk.Frame):
         self.figure.savefig(image_path)
 
 
+class MotorControl(ttk.Frame):
+    def __init__(self, parent, stm_control, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.stm = stm_control
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(2, weight=1)
+        self.grid_columnconfigure(3, weight=1)
+
+        self.steps_var = tk.StringVar(value="10")
+
+        back_button = ttk.Button(self, text="Back", command=self._move_backward)
+        back_button.grid(row=0, column=0, sticky='ew', padx=1)
+
+        steps_entry = ttk.Entry(self, textvariable=self.steps_var, width=8)
+        steps_entry.grid(row=0, column=1, sticky='ew', padx=1)
+
+        forward_button = ttk.Button(self, text="Forward", command=self._move_forward)
+        forward_button.grid(row=0, column=2, sticky='ew', padx=1)
+
+        stop_button = ttk.Button(self, text="Stop", command=self.stm.stepper_stop)
+        stop_button.grid(row=0, column=3, sticky='ew', padx=1)
+
+    def _move_backward(self):
+        try:
+            steps = int(self.steps_var.get())
+            self.stm.move_motor(-steps)
+        except ValueError:
+            self.steps_var.set("10")
+
+    def _move_forward(self):
+        try:
+            steps = int(self.steps_var.get())
+            self.stm.move_motor(steps)
+        except ValueError:
+            self.steps_var.set("10")
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -310,8 +348,8 @@ class App(tk.Tk):
         add_control_widget(_DAC_Slider_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts, from_=0, to=65535)
         add_control_widget(_DAC_Slider_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts, from_=0, to=65535)
         add_separator()
-        add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Steps"])
-        add_control_widget(_MultipleButtons, ["Back", "Forward", "Stop"], [self.stm.stepper_step_backward, self.stm.stepper_step_forward, self.stm.stepper_stop])
+        add_control_widget(_ButtonWithEntry, "Approach", ["500", "10000", "10"], self.stm.approach, display_list=["Target", "Max Steps", "Step Interval"])
+        add_control_widget(MotorControl, stm_control=self.stm)
         add_control_widget(_ButtonWithEntry, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()

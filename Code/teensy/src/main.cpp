@@ -50,9 +50,12 @@ void serialCommand(String command, STM &stm)
     {
       stm.move_motor(-1);
     }
-    if (command == "STPS")
+    if (command == "STPS" || command == "STOP")
     {
       stm.stop_motor();
+      stm.stm_status.is_approaching = false;
+      stm.stm_status.is_const_current = false;
+      stm.stm_status.is_scanning = false;
     }
     // DAC control
     if (command == "DACX")
@@ -88,8 +91,9 @@ void serialCommand(String command, STM &stm)
     if (command == "APRH")
     {
       int adc_target = Serial.parseInt();
-      int steps = Serial.parseInt();
-      stm.start_approach(adc_target, 10000, steps);
+      int max_steps = Serial.parseInt();
+      int step_interval = Serial.parseInt();
+      stm.start_approach(adc_target, max_steps, step_interval);
     }
     // MeasureIV
     if (command == "IVME")
@@ -139,13 +143,7 @@ void serialCommand(String command, STM &stm)
     {
       stm.test_piezo();
     }
-    if (command == "STOP")
-    {
-      stm.stop_motor();
-      stm.stm_status.is_approaching = false;
-      stm.stm_status.is_const_current = false;
-      stm.stm_status.is_scanning = false;
-    }
+
   }
 }
 
@@ -160,11 +158,10 @@ void serialCommand(String command, STM &stm)
 void checkSerial(STM &stm)
 {
   String serialString;
-  if (Serial.available() > 0)
+  if (Serial.available() >= CMD_LENGTH)
   {
     for (int i = 0; i < CMD_LENGTH; i++) // Read command with length CMD_LENGTH
     {
-      // delay(1);
       char inChar = Serial.read();
       serialString += inChar;
     }

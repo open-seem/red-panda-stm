@@ -231,16 +231,17 @@ class STM(object):
         Args:
             steps (int): The number of steps to move the motor.
         """
-        self.send_cmd('MTMV {steps}')
+        self.send_cmd(f'MTMV {steps}')
 
-    def approach(self, target_dac, steps):
+    def approach(self, target_dac, max_steps, step_interval):
         """Initiates the tip approach procedure.
 
         Args:
             target_dac (int): The target DAC value for the approach.
-            steps (int): The number of steps for the approach motor.
+            max_steps (int): The maximum number of motor steps to take.
+            step_interval (int): The number of steps to take in each iteration.
         """
-        self.send_cmd(f'APRH {target_dac} {steps}')
+        self.send_cmd(f'APRH {target_dac} {max_steps} {step_interval}')
 
     def stop(self):
         """Sends a command to stop any ongoing operation on the STM."""
@@ -249,14 +250,6 @@ class STM(object):
     def stepper_stop(self):
         """Sends a command to stop the stepper motor."""
         self.send_cmd('STPS')
-
-    def stepper_step_forward(self):
-        """Sends a command to move the stepper motor one step forward."""
-        self.send_cmd('STPF')
-
-    def stepper_step_backward(self):
-        """Sends a command to move the stepper motor one step backward."""
-        self.send_cmd('STPB')
 
 
     def measure_iv_curve(self, dac_start, dac_end, dac_step):
