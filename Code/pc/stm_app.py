@@ -158,7 +158,6 @@ class App(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         self.stm = stm_control.STM()
-        self.stm.connect('COM4') # You might need to change this
         self.style = ttk.Style(self)
         self.style.map('Blue.TButton',
             background=[('active', '#00599c'), ('!disabled', '#0078d4')],
