@@ -156,6 +156,9 @@ class App(tk.Tk):
         self.after_id = None
         self.after_id_images = None
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        self.wm_title("Panda STM")
+        self.is_const_current_on = False
 
         self.stm = stm_control.STM()
         self.style = ttk.Style(self)
