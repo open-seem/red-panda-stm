@@ -82,28 +82,56 @@ class PlotFrame(ttk.Frame):
         self.figure.savefig(image_path)
 
 
-class MotorControl(ttk.Frame):
+class ApproachAndMotorControl(ttk.Frame):
     def __init__(self, parent, stm_control, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         self.stm = stm_control
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=1)
-        self.grid_columnconfigure(3, weight=1)
+        self.grid_columnconfigure(2, weight=1) # Allow entry column to expand
 
+        # --- Buttons ---
+        button_frame = ttk.Frame(self)
+        button_frame.grid(row=0, column=0, rowspan=4, sticky='ns', padx=(0, 10))
+        button_frame.grid_rowconfigure(0, weight=1)
+        button_frame.grid_rowconfigure(1, weight=1)
+        button_frame.grid_rowconfigure(2, weight=1)
+        button_frame.grid_rowconfigure(3, weight=1)
+
+        approach_button = ttk.Button(button_frame, text="Approach", command=self._start_approach)
+        approach_button.grid(row=0, column=0, sticky='ew', pady=2)
+
+        back_button = ttk.Button(button_frame, text="Back", command=self._move_backward)
+        back_button.grid(row=1, column=0, sticky='ew', pady=2)
+
+        forward_button = ttk.Button(button_frame, text="Forward", command=self._move_forward)
+        forward_button.grid(row=2, column=0, sticky='ew', pady=2)
+
+        stop_button = ttk.Button(button_frame, text="Stop", command=self.stm.stepper_stop)
+        stop_button.grid(row=3, column=0, sticky='ew', pady=2)
+
+        # --- Labels and Entries ---
+        ttk.Label(self, text="Target:").grid(row=0, column=1, sticky='w')
+        self.target_var = tk.StringVar(value="500")
+        target_entry = ttk.Entry(self, textvariable=self.target_var, width=10)
+        target_entry.grid(row=0, column=2, sticky='ew', pady=2)
+
+        ttk.Label(self, text="Max Steps:").grid(row=1, column=1, sticky='w')
+        self.max_steps_var = tk.StringVar(value="10000")
+        max_steps_entry = ttk.Entry(self, textvariable=self.max_steps_var, width=10)
+        max_steps_entry.grid(row=1, column=2, sticky='ew', pady=2)
+
+        ttk.Label(self, text="Steps:").grid(row=2, column=1, sticky='w')
         self.steps_var = tk.StringVar(value="10")
+        steps_entry = ttk.Entry(self, textvariable=self.steps_var, width=10)
+        steps_entry.grid(row=2, column=2, sticky='ew', pady=2)
 
-        back_button = ttk.Button(self, text="Back", command=self._move_backward)
-        back_button.grid(row=0, column=0, sticky='ew', padx=1)
-
-        steps_entry = ttk.Entry(self, textvariable=self.steps_var, width=8)
-        steps_entry.grid(row=0, column=1, sticky='ew', padx=1)
-
-        forward_button = ttk.Button(self, text="Forward", command=self._move_forward)
-        forward_button.grid(row=0, column=2, sticky='ew', padx=1)
-
-        stop_button = ttk.Button(self, text="Stop", command=self.stm.stepper_stop)
-        stop_button.grid(row=0, column=3, sticky='ew', padx=1)
+    def _start_approach(self):
+        try:
+            target_adc = int(self.target_var.get())
+            max_steps = int(self.max_steps_var.get())
+            step_interval = int(self.steps_var.get())
+            self.stm.approach(target_adc, max_steps, step_interval)
+        except ValueError:
+            print("Invalid approach parameters")
 
     def _move_backward(self):
         try:
@@ -123,10 +151,14 @@ class MotorControl(ttk.Frame):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.title("STM Controller")
+        self.geometry("1200x800")
+        self.after_id = None
+        self.after_id_images = None
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
         self.stm = stm_control.STM()
-        self.wm_title("Panda STM")
-        self.is_const_current_on = False
-        
+        self.stm.connect('COM4') # You might need to change this
         self.style = ttk.Style(self)
         self.style.map('Blue.TButton',
             background=[('active', '#00599c'), ('!disabled', '#0078d4')],
@@ -348,8 +380,7 @@ class App(tk.Tk):
         add_control_widget(_DAC_Slider_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts, from_=0, to=65535)
         add_control_widget(_DAC_Slider_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts, from_=0, to=65535)
         add_separator()
-        add_control_widget(_ButtonWithEntry, "Approach", ["500", "10000", "10"], self.stm.approach, display_list=["Target", "Max Steps", "Step Interval"])
-        add_control_widget(MotorControl, stm_control=self.stm)
+        add_control_widget(ApproachAndMotorControl, stm_control=self.stm)
         add_control_widget(_ButtonWithEntry, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()
@@ -373,6 +404,7 @@ class App(tk.Tk):
         
         self.status_label = ttk.Label(self.control_frames, text="No Updates", relief=tk.RAISED, anchor='w', wraplength=380)
         self.status_label.grid(row=row_number, column=0, sticky='ew', pady=(10,0))
+
 
     def show_help_window(self):
         help_win = tk.Toplevel(self)
@@ -496,13 +528,20 @@ class App(tk.Tk):
                 plot_steps = [h.steps for h in self.stm.history]
                 self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_adc)
                 self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
-        self.after(200, self._update_real_time)
+        self.after_id = self.after(200, self._update_real_time)
 
     def _update_images(self):
         if np.any(self.stm.scan_adc):
             self.scan_adc_frame.update_image(self.stm.scan_adc)
             self.scan_dacz_frame.update_image(self.stm.scan_dacz)
-        self.after(200, self._update_images)
+        self.after_id_images = self.after(100, self._update_images)
+
+    def on_closing(self):
+        if self.after_id:
+            self.after_cancel(self.after_id)
+        if self.after_id_images:
+            self.after_cancel(self.after_id_images)
+        self.destroy()
 
     def _plot_iv_curve(self, *args):
         try:

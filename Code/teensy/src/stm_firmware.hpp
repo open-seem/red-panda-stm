@@ -268,6 +268,7 @@ public:
 
     int approach_z_value;
     bool z_sweep_in_progress;
+    int motor_steps_to_take;
 
     /**
      * @brief Starts the automated approach sequence.
@@ -283,6 +284,7 @@ public:
         stm_status.is_approaching = true;
         z_sweep_in_progress = false;
         approach_z_value = -23000;
+        motor_steps_to_take = 0;
     }
 
     /**
@@ -291,50 +293,63 @@ public:
      */
     bool approach()
     {
-        if (stm_status.is_approaching)
+        if (!stm_status.is_approaching)
         {
-            if (z_sweep_in_progress)
+            return false;
+        }
+
+        // State 1: Move motor if there are steps to take
+        if (motor_steps_to_take > 0)
+        {
+            stepper_motor.step(1); // Move one step forward
+            motor_steps_to_take--;
+            stm_status.steps = stepper_motor.get_total_steps();
+            delay(2); // A small delay for the motor to settle.
+            return false; // Return to allow main loop to run
+        }
+
+        // State 2: Perform Z-DAC sweep
+        if (z_sweep_in_progress)
+        {
+            approach_z_value += 100;
+            if (approach_z_value <= 17000)
             {
-                approach_z_value += 100; // Increment Z DAC value
-                if (approach_z_value <= 17000)
+                set_dac_z(approach_z_value);
+                delayMicroseconds(100); // Short delay for DAC to settle
+                update();
+                if (read_adc() > approach_config.target_dac)
                 {
-                    set_dac_z(approach_z_value);
-                    delayMicroseconds(100); // Short delay for DAC to settle
-                    update();
-                    if (read_adc() > approach_config.target_dac)
-                    {
-                        Serial.println("Approached!");
-                        Serial.println(stm_status.adc);
-                        stm_status.is_approaching = false;
-                        z_sweep_in_progress = false;
-                        stepper_motor.disable();
-                        return true;
-                    }
-                }
-                else
-                {
-                    // Z sweep finished, did not find target
+                    Serial.println("Approached!");
+                    stm_status.is_approaching = false;
                     z_sweep_in_progress = false;
+                    stepper_motor.disable();
+                    return true; // Approach finished successfully
                 }
             }
             else
             {
-                // Z sweep not in progress, so let's move the motor
-                if (stepper_motor.get_total_steps() < approach_config.max_steps)
-                {
-                    move_motor(approach_config.step_interval);
-                    delay(2); // delay for motor to settle
-                    approach_z_value = -23000; // Reset Z DAC for new sweep
-                    z_sweep_in_progress = true; // Start sweep
-                }
-                else
-                {
-                    // Reached max steps
-                    stm_status.is_approaching = false;
-                    return false;
-                }
+                // Z sweep finished, did not find target
+                z_sweep_in_progress = false;
             }
+            return false; // Return to allow main loop to run
         }
+
+        // State 3: Check max steps and prepare for next cycle
+        if (stepper_motor.get_total_steps() < approach_config.max_steps)
+        {
+            // Prepare for next motor move and Z-sweep cycle
+            motor_steps_to_take = approach_config.step_interval;
+            approach_z_value = -23000; // Reset Z DAC for new sweep
+            z_sweep_in_progress = true;
+        }
+        else
+        {
+            // Reached max steps
+            Serial.println("Approach failed: Max steps reached.");
+            stm_status.is_approaching = false;
+            return false; // Approach finished unsuccessfully
+        }
+
         return false;
     }
     int iv_bias[1000];
