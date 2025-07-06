@@ -133,6 +133,7 @@ void serialCommand(String command, STM &stm)
     }
     if (command == "STOP")
     {
+      stm.stop_motor();
       stm.stm_status.is_approaching = false;
       stm.stm_status.is_const_current = false;
       stm.stm_status.is_scanning = false;
