@@ -311,7 +311,7 @@ class App(tk.Tk):
         add_control_widget(_DAC_Slider_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts, from_=0, to=65535)
         add_separator()
         add_control_widget(_ButtonWithEntry, "Approach", ["500", "1"], self.stm.approach, display_list=["Target", "Steps"])
-        add_control_widget(_MultipleButtons, ["Stepper Stop"], [self.stm.stepper_stop])
+        add_control_widget(_MultipleButtons, ["Back", "Forward", "Stop"], [self.stm.stepper_step_backward, self.stm.stepper_step_forward, self.stm.stepper_stop])
         add_control_widget(_ButtonWithEntry, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()

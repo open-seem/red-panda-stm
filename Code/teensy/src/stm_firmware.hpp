@@ -266,6 +266,9 @@ public:
 
     Approach_Config approach_config = Approach_Config();
 
+    int approach_z_value;
+    bool z_sweep_in_progress;
+
     /**
      * @brief Starts the automated approach sequence.
      * @param target_adc The target ADC value to stop the approach.
@@ -274,11 +277,12 @@ public:
      */
     void start_approach(int target_adc, int max_motor_steps, int step_interval)
     {
-
         approach_config.max_steps = stepper_motor.get_total_steps() + max_motor_steps;
         approach_config.step_interval = step_interval;
         approach_config.target_dac = target_adc;
         stm_status.is_approaching = true;
+        z_sweep_in_progress = false;
+        approach_z_value = -23000;
     }
 
     /**
@@ -289,31 +293,46 @@ public:
     {
         if (stm_status.is_approaching)
         {
-            if (stepper_motor.get_total_steps() < approach_config.max_steps)
+            if (z_sweep_in_progress)
             {
-                move_motor(approach_config.step_interval);
-                delay(2);
-                 // BUG FIX 4: This loop is updated for Two's Complement mode.
-                 // The range corresponds to approx -7V to +5V on the -10V to +10V range DAC.
-                 for (int z_value = -23000; z_value <= 17000; z_value = z_value + 100)
+                approach_z_value += 100; // Increment Z DAC value
+                if (approach_z_value <= 17000)
                 {
-                    set_dac_z(z_value);
-                    delayMicroseconds(100);
+                    set_dac_z(approach_z_value);
+                    delayMicroseconds(100); // Short delay for DAC to settle
                     update();
                     if (read_adc() > approach_config.target_dac)
                     {
                         Serial.println("Approached!");
                         Serial.println(stm_status.adc);
                         stm_status.is_approaching = false;
+                        z_sweep_in_progress = false;
                         stepper_motor.disable();
                         return true;
                     }
                 }
+                else
+                {
+                    // Z sweep finished, did not find target
+                    z_sweep_in_progress = false;
+                }
             }
             else
             {
-                stm_status.is_approaching = false;
-                return false;
+                // Z sweep not in progress, so let's move the motor
+                if (stepper_motor.get_total_steps() < approach_config.max_steps)
+                {
+                    move_motor(approach_config.step_interval);
+                    delay(2); // delay for motor to settle
+                    approach_z_value = -23000; // Reset Z DAC for new sweep
+                    z_sweep_in_progress = true; // Start sweep
+                }
+                else
+                {
+                    // Reached max steps
+                    stm_status.is_approaching = false;
+                    return false;
+                }
             }
         }
         return false;

@@ -250,6 +250,14 @@ class STM(object):
         """Sends a command to stop the stepper motor."""
         self.send_cmd('STPS')
 
+    def stepper_step_forward(self):
+        """Sends a command to move the stepper motor one step forward."""
+        self.send_cmd('STPF')
+
+    def stepper_step_backward(self):
+        """Sends a command to move the stepper motor one step backward."""
+        self.send_cmd('STPB')
+
 
     def measure_iv_curve(self, dac_start, dac_end, dac_step):
         """Initiates an I-V curve measurement and retrieves the data.

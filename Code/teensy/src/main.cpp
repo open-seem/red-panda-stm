@@ -42,6 +42,14 @@ void serialCommand(String command, STM &stm)
       int value = Serial.parseInt();
       stm.move_motor(value);
     }
+    if (command == "STPF")
+    {
+      stm.move_motor(1);
+    }
+    if (command == "STPB")
+    {
+      stm.move_motor(-1);
+    }
     if (command == "STPS")
     {
       stm.stop_motor();
