@@ -6,6 +6,7 @@ import stm_control
 import time
 import csv
 import threading
+import serial.tools.list_ports
 
 
 from matplotlib.backends.backend_tkagg import (
@@ -278,7 +279,28 @@ class App(tk.Tk):
             ttk.Separator(self.control_frames, orient='horizontal').grid(row=row_number, column=0, sticky='ew', pady=5)
             row_number += 1
 
-        add_control_widget(_ButtonWithEntry, "Open", ["COM6"], self.stm.open)
+        # --- Connection Control ---
+        connection_frame = ttk.Frame(self.control_frames)
+        connection_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
+        connection_frame.grid_columnconfigure(1, weight=1) # Let the combobox expand
+        row_number += 1
+
+        open_button = ttk.Button(connection_frame, text="Open", command=lambda: self.stm.open(self.port_var.get()))
+        open_button.grid(row=0, column=0, sticky='w', padx=(0,5))
+
+        ports = [port.device for port in serial.tools.list_ports.comports()]
+        self.port_var = tk.StringVar(value=ports[0] if ports else "")
+        port_combobox = ttk.Combobox(connection_frame, textvariable=self.port_var, values=ports, state="readonly")
+        port_combobox.grid(row=0, column=1, sticky='ew')
+
+        def refresh_ports():
+            new_ports = [port.device for port in serial.tools.list_ports.comports()]
+            port_combobox['values'] = new_ports
+            if self.port_var.get() not in new_ports:
+                self.port_var.set(new_ports[0] if new_ports else "")
+
+        refresh_button = ttk.Button(connection_frame, text="↻", command=refresh_ports, width=3)
+        refresh_button.grid(row=0, column=2, sticky='e', padx=(5,0))
         # --- NEW: Added "Help" button ---
         add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear", "Help"],
                            [self.stm.stop, self.stm.reset, self.stm.clear, self.show_help_window])
