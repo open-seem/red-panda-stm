@@ -32,6 +32,10 @@ class STM_Status:
     is_const_current: bool = False
     is_scanning: bool = False
     time_millis: int = 0
+    bias_scaling_factor = 1.0
+    x_scaling_factor = 1.0
+    y_scaling_factor = 1.0
+    z_scaling_factor = 1.0
 
     @staticmethod
     def from_list(values):
@@ -65,46 +69,12 @@ class STM_Status:
             float: The corresponding current in Amperes.
         """
         return 1.0 * adc / 32768 * 10.24 / 100e6
-
-    @staticmethod
-    def dac_to_dacz_volts(dac: int):
-        """Convert a DAC value to the corresponding Z-axis voltage.
-
-        Args:
-            dac (int): The DAC value to convert.
-
-        Returns:
-            float: The corresponding voltage for the Z-axis.
-        """
-        return 1.0 * (dac - 32768) / 32768 * 10.0 / 2.0
-
-    @staticmethod
-    def dac_to_dacx_volts(dac: int):
-        """Convert a DAC value to the corresponding X-axis voltage.
-
-        Args:
-            dac (int): The DAC value to convert.
-
-        Returns:
-            float: The corresponding voltage for the X-axis.
-        """
-        return 1.0 * (dac - 32768) / 32768 * 10.0 / 2.0
-
-    @staticmethod
-    def dac_to_dacy_volts(dac: int):
-        """Convert a DAC value to the corresponding Y-axis voltage.
-
-        Args:
-            dac (int): The DAC value to convert.
-
-        Returns:
-            float: The corresponding voltage for the Y-axis.
-        """
-        return 1.0 * (dac - 32768) / 32768 * 10.0 / 2.0
+    def set_bias_scaling_factor(self, factor: float):
+        STM_Status.bias_scaling_factor = factor
 
     @staticmethod
     def dac_to_bias_volts(dac: int):
-        """Convert a DAC value to the corresponding bias voltage.
+        """Convert a DAC value to the corresponding bias voltage using the scaling factor.
 
         Args:
             dac (int): The DAC value to convert.
@@ -112,9 +82,61 @@ class STM_Status:
         Returns:
             float: The corresponding bias voltage.
         """
-        # Unipolar 0V to +3V range
-        return 3.0 * dac / 65535.0
+        # Base range is 0-3V, multiplied by the scaling factor
+        base_voltage = 10.0
+        return (base_voltage * STM_Status.bias_scaling_factor) * dac / 65535.0
 
+    def set_x_scaling_factor(self, factor: float):
+        STM_Status.x_scaling_factor = factor
+
+    @staticmethod
+    def dac_to_dacx_volts(dac: int):
+        """Convert a DAC value to the corresponding X-axis voltage using the scaling factor.
+
+        Args:
+            dac (int): The DAC value to convert.
+
+        Returns:
+            float: The corresponding X-axis voltage.
+        """
+        # Base range is 0-5V, multiplied by the scaling factor
+        base_voltage = 5.0
+        return (base_voltage * STM_Status.x_scaling_factor) * (dac - 32768) / 32768
+
+    def set_y_scaling_factor(self, factor: float):
+        STM_Status.y_scaling_factor = factor
+
+    @staticmethod
+    def dac_to_dacy_volts(dac: int):
+        """Convert a DAC value to the corresponding Y-axis voltage using the scaling factor.
+
+        Args:
+            dac (int): The DAC value to convert.
+
+        Returns:
+            float: The corresponding Y-axis voltage.
+        """
+        # Base range is 0-5V, multiplied by the scaling factor
+        base_voltage = 5.0
+        return (base_voltage * STM_Status.y_scaling_factor) * (dac - 32768) / 32768
+
+    def set_z_scaling_factor(self, factor: float):
+        STM_Status.z_scaling_factor = factor
+
+    @staticmethod
+    def dac_to_dacz_volts(dac: int):
+        """Convert a DAC value to the corresponding Z-axis voltage using the scaling factor.
+
+        Args:
+            dac (int): The DAC value to convert.
+
+        Returns:
+            float: The corresponding Z-axis voltage.
+        """
+        # Base range is 0-10V, multiplied by the scaling factor
+        base_voltage = 10.0
+        return (base_voltage * STM_Status.z_scaling_factor) * (dac - 32768) / 32768
+    
     def to_string(self):
         """Return a formatted string representation of the STM status.
 
@@ -407,3 +429,4 @@ class STM(object):
                 break
         self.busy = False
         return
+

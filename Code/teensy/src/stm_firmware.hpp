@@ -598,25 +598,16 @@ public:
     STMStatus stm_status = STMStatus();
 
 private:
-     // --- BUG FIX 2 & 3: Correct DAC initialization modes ---
-     // All bipolar ranges are now configured for Two's Complement data coding (B2C Bit = 1).
-     // This ensures that the signed integer values used in the firmware are correctly interpreted by the DAC.
-     // The RA[2:0] bits are set according to the desired voltage ranges from Table 12.
- 
-     // Output range: -5V to +5V (RA=010), Two's Complement (B2C=1)
-     static const uint16_t MODE_X = 0b0000000001000010;
-     // Output range: -5V to +5V (RA=010), Two's Complement (B2C=1)
-     static const uint16_t MODE_Y = 0b0000000001000010;
-     // Output range: -10V to +10V (RA=000), Two's Complement (B2C=1)
-     static const uint16_t MODE_Z = 0b0000000001000000;
-     // Output range: 0V to +3V (RA=110), Straight Binary (B2C=0)
-     static const uint16_t MODE_BIAS = 0b0000000000000110;
- 
-    // DAC Settings
-     AD5761 dac_x = AD5761(DAC_1, MODE_X);
-     AD5761 dac_y = AD5761(DAC_2, MODE_Y);
-     AD5761 dac_z = AD5761(DAC_3, MODE_Z);
-     AD5761 dac_bias = AD5761(DAC_4, MODE_BIAS);
+     // DAC output mode register setting
+     static const uint16_t MODE_BIPOLAR_10V = 0b0000000000001010; // -10V to +10V
+     static const uint16_t MODE_BIPOLAR_5V  = 0b0000000000001001; // -5V to +5V
+
+
+     // DAC objects
+     AD5761 dac_x = AD5761(DAC_1, MODE_BIPOLAR_5V);
+     AD5761 dac_y = AD5761(DAC_2, MODE_BIPOLAR_5V);
+     AD5761 dac_z = AD5761(DAC_3, MODE_BIPOLAR_10V);
+     AD5761 dac_bias = AD5761(DAC_4, MODE_3V);
 
     // ADC settings
     LTC2326_16 ltc2326 = LTC2326_16(CS_ADC, CNV, BUSY);

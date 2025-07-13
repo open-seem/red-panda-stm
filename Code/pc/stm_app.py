@@ -290,6 +290,38 @@ class App(tk.Tk):
                 except (ValueError, TypeError):
                     self.display_var.set("Invalid")
 
+        class _DACControlWithScaling(ttk.Frame):
+            def __init__(self, parent, label, stm, set_dac_func, dac_to_volts_func, set_scaling_func, get_scaling_func, *args, **kwargs):
+                super().__init__(parent, *args, **kwargs)
+                self.stm = stm
+                self.set_scaling_func = set_scaling_func
+                self.get_scaling_func = get_scaling_func
+                self.grid_columnconfigure(1, weight=1)
+
+                self.slider_control = _DAC_Slider_Control(self, label, "32768", set_dac_func, dac_to_volts_func, from_=0, to=65535)
+                self.slider_control.pack(fill='x', expand=True)
+
+                scale_frame = ttk.Frame(self)
+                scale_frame.pack(fill='x', expand=True, pady=(5,0))
+                scale_frame.grid_columnconfigure(1, weight=1)
+
+                ttk.Label(scale_frame, text="Scale Factor:").grid(row=0, column=0, sticky='w')
+                self.scale_var = tk.StringVar(value=str(get_scaling_func()))
+                self.scale_entry = ttk.Entry(scale_frame, textvariable=self.scale_var, width=10)
+                self.scale_entry.grid(row=0, column=1, sticky='ew', padx=5)
+                self.scale_entry.bind('<Return>', self._on_scale_set)
+                self.scale_entry.bind('<FocusOut>', self._on_scale_set)
+
+            def _on_scale_set(self, event=None):
+                try:
+                    factor = float(self.scale_var.get())
+                    self.set_scaling_func(factor)
+                    # Update the display to reflect the new scale
+                    current_slider_value = self.slider_control.variable.get()
+                    self.slider_control._update_display(current_slider_value)
+                except ValueError:
+                    self.scale_var.set(str(self.get_scaling_func()))
+
         class _ButtonWithEntry(ttk.Frame):
             def __init__(self, parent, text, default_value_list, cmd_func, display_list=None, *args, **kwargs):
                 super().__init__(parent, *args, **kwargs)
@@ -377,12 +409,13 @@ class App(tk.Tk):
         add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear", "Help"],
                            [self.stm.stop, self.stm.reset, self.stm.clear, self.show_help_window])
         add_separator()
-        add_control_widget(_DAC_Slider_Control, "Bias", "32768", self.stm.set_bias, stm_control.STM_Status.dac_to_bias_volts, from_=0, to=65535)
-        add_control_widget(_DAC_Slider_Control, "DACZ", "32768", self.stm.set_dacz, stm_control.STM_Status.dac_to_dacz_volts, from_=0, to=65535)
-        add_control_widget(_DAC_Slider_Control, "DACX", "32768", self.stm.set_dacx, stm_control.STM_Status.dac_to_dacx_volts, from_=0, to=65535)
-        add_control_widget(_DAC_Slider_Control, "DACY", "32768", self.stm.set_dacy, stm_control.STM_Status.dac_to_dacy_volts, from_=0, to=65535)
+        add_control_widget(_DACControlWithScaling, label="Bias", stm=self.stm, set_dac_func=self.stm.set_bias, dac_to_volts_func=stm_control.STM_Status.dac_to_bias_volts, set_scaling_func=stm_control.STM_Status.set_bias_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.bias_scaling_factor)
+        add_control_widget(_DACControlWithScaling, label="DACZ", stm=self.stm, set_dac_func=self.stm.set_dacz, dac_to_volts_func=stm_control.STM_Status.dac_to_dacz_volts, set_scaling_func=stm_control.STM_Status.set_z_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.z_scaling_factor)
+        add_control_widget(_DACControlWithScaling, label="DACX", stm=self.stm, set_dac_func=self.stm.set_dacx, dac_to_volts_func=stm_control.STM_Status.dac_to_dacx_volts, set_scaling_func=stm_control.STM_Status.set_x_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.x_scaling_factor)
+        add_control_widget(_DACControlWithScaling, label="DACY", stm=self.stm, set_dac_func=self.stm.set_dacy, dac_to_volts_func=stm_control.STM_Status.dac_to_dacy_volts, set_scaling_func=stm_control.STM_Status.set_y_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.y_scaling_factor)
         add_separator()
         add_control_widget(ApproachAndMotorControl, stm_control=self.stm)
+        add_separator()
         add_control_widget(_ButtonWithEntry, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()
@@ -550,9 +583,18 @@ class App(tk.Tk):
             int_args = [int(arg) for arg in args]
             iv_values = self.stm.measure_iv_curve(*int_args)
             if not iv_values: return
-            bias = [stm_control.STM_Status.dac_to_bias_volts(d) for d in iv_values[::2]]
-            current = [stm_control.STM_Status.adc_to_amp(a) for a in iv_values[1::2]]
-            self.iv_curve_frame.update_plot(bias, current)
+            num_points = iv_values[0]
+            data = iv_values[1:]
+            iv_pairs = list(zip(data[::2], data[1::2]))
+            iv_pairs.sort(key=lambda x: x[0])
+            sorted_bias_dac = [p[0] for p in iv_pairs]
+            sorted_current_adc = [p[1] for p in iv_pairs]
+
+            bias_volts = [stm_control.STM_Status.dac_to_bias_volts(d) for d in sorted_bias_dac]
+            current_amps = [stm_control.STM_Status.adc_to_amp(a) for a in sorted_current_adc]
+            self.iv_curve_frame.update_plot(bias_volts, current_amps)
+            self.last_iv_data = list(zip(bias_volts, current_amps))
+
         except Exception as e:
             print(f"Error plotting IV curve: {e}")
             
