@@ -20,6 +20,7 @@ class STM_Status:
         is_approaching (bool): True if the STM is in approach mode.
         is_const_current (bool): True if the STM is in constant current mode.
         is_scanning (bool): True if the STM is scanning.
+        approach_direction (int): The approach direction: 1 for forward, -1 for backward.
         time_millis (int): The timestamp of the status in milliseconds.
     """
     bias: int = 0
@@ -31,6 +32,8 @@ class STM_Status:
     is_approaching: bool = False
     is_const_current: bool = False
     is_scanning: bool = False
+    approach_direction: int = 1
+    approach_recovery: bool = False
     time_millis: int = 0
     bias_scaling_factor = 1.0
     x_scaling_factor = 1.0
@@ -56,7 +59,9 @@ class STM_Status:
                           is_approaching=bool(values[6]),
                           is_const_current=bool(values[7]),
                           is_scanning=bool(values[8]),
-                          time_millis=values[9])
+                          approach_direction=values[9],
+                          approach_recovery=bool(values[10]),
+                          time_millis=values[11])
 
     @staticmethod
     def adc_to_amp(adc: int):
@@ -143,6 +148,16 @@ class STM_Status:
         Returns:
             str: A formatted string with all status fields.
         """
+        direction_str = "Forward" if self.approach_direction == 1 else "Backward"
+        approach_status = ""
+        if self.is_approaching:
+            if self.approach_recovery:
+                approach_status = f"RECOVERING ({direction_str})"
+            else:
+                approach_status = f"ACTIVE ({direction_str})"
+        else:
+            approach_status = "IDLE"
+            
         return """STM Status:
                 Bias: {} 
                 Z: {} 
@@ -150,10 +165,11 @@ class STM_Status:
                 Y: {} 
                 ADC: {} 
                 STEPS: {}
-                Appoaching: {} 
+                Approaching: {}
                 ConstCurrent: {} 
                 Scan: {}  
-                Time: {}""".format(self.bias, self.dac_z, self.dac_x, self.dac_y, self.adc, self.steps, self.is_approaching,  self.is_const_current, self.is_scanning, self.time_millis)
+                Time: {}""".format(self.bias, self.dac_z, self.dac_x, self.dac_y, self.adc, self.steps, 
+                                 approach_status, self.is_const_current, self.is_scanning, self.time_millis)
 
 
 class STM(object):
@@ -255,15 +271,17 @@ class STM(object):
         """
         self.send_cmd(f'MTMV {steps}')
 
-    def approach(self, target_dac, max_steps, step_interval):
+    def approach(self, target_dac, max_steps, step_interval, direction=1):
         """Initiates the tip approach procedure.
 
         Args:
             target_dac (int): The target DAC value for the approach.
             max_steps (int): The maximum number of motor steps to take.
             step_interval (int): The number of steps to take in each iteration.
+            direction (int): The approach direction: 1 for forward, -1 for backward.
         """
-        self.send_cmd(f'APRH {target_dac} {max_steps} {step_interval}')
+        direction = 1 if direction >= 0 else -1  # Ensure only 1 or -1
+        self.send_cmd(f'APRH {target_dac} {max_steps} {step_interval} {direction}')
 
     def stop(self):
         """Sends a command to stop any ongoing operation on the STM."""
@@ -362,6 +380,36 @@ class STM(object):
             Kd (float): The derivative gain.
         """
         self.send_cmd(f"PIDS {Kp} {Ki} {Kd}")
+
+    def get_pid_debug(self):
+        """Gets PID debug information from the STM.
+        
+        Returns:
+            str: PID debug information string
+        """
+        if self.is_opened:
+            self.send_cmd('PIDD')
+            debug_str = self.stm_serial.readline().decode().strip()
+            return debug_str
+        return "Not connected"
+
+    def get_approach_debug(self):
+        """Gets approach debug information from the STM.
+        
+        Returns:
+            str: Approach debug information string
+        """
+        if self.is_opened:
+            self.send_cmd('APRD')
+            debug_str = self.stm_serial.readline().decode().strip()
+            return debug_str
+        return "Not connected"
+
+    def trigger_approach_recovery(self):
+        """Manually triggers approach recovery mode for testing."""
+        if self.is_opened:
+            self.send_cmd('APRR')
+            print("Approach recovery triggered")
 
     def start_scan(self, x_start, x_end, x_resolution, y_start, y_end, y_resolution, sample_number):
         """Starts a 2D scan and collects data.

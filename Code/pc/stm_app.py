@@ -90,11 +90,12 @@ class ApproachAndMotorControl(ttk.Frame):
 
         # --- Buttons ---
         button_frame = ttk.Frame(self)
-        button_frame.grid(row=0, column=0, rowspan=4, sticky='ns', padx=(0, 10))
+        button_frame.grid(row=0, column=0, rowspan=5, sticky='ns', padx=(0, 10))
         button_frame.grid_rowconfigure(0, weight=1)
         button_frame.grid_rowconfigure(1, weight=1)
         button_frame.grid_rowconfigure(2, weight=1)
         button_frame.grid_rowconfigure(3, weight=1)
+        button_frame.grid_rowconfigure(4, weight=1)
 
         approach_button = ttk.Button(button_frame, text="Approach", command=self._start_approach)
         approach_button.grid(row=0, column=0, sticky='ew', pady=2)
@@ -124,12 +125,26 @@ class ApproachAndMotorControl(ttk.Frame):
         steps_entry = ttk.Entry(self, textvariable=self.steps_var, width=10)
         steps_entry.grid(row=2, column=2, sticky='ew', pady=2)
 
+        ttk.Label(self, text="Direction:").grid(row=3, column=1, sticky='w')
+        self.direction_var = tk.StringVar(value="Forward")
+        direction_combo = ttk.Combobox(self, textvariable=self.direction_var, 
+                                     values=["Forward", "Backward"], 
+                                     state="readonly", width=8)
+        direction_combo.grid(row=3, column=2, sticky='ew', pady=2)
+        
+        # Add info label
+        info_label = ttk.Label(self, text="Forward: tip towards sample, Backward: tip away from sample", 
+                              font=('TkDefaultFont', 8), foreground='gray')
+        info_label.grid(row=4, column=1, columnspan=2, sticky='w', pady=(0, 5))
+
     def _start_approach(self):
         try:
             target_adc = int(self.target_var.get())
             max_steps = int(self.max_steps_var.get())
             step_interval = int(self.steps_var.get())
-            self.stm.approach(target_adc, max_steps, step_interval)
+            direction = 1 if self.direction_var.get() == "Forward" else -1
+            self.stm.approach(target_adc, max_steps, step_interval, direction)
+            print(f"Starting approach in {self.direction_var.get()} direction")
         except ValueError:
             print("Invalid approach parameters")
 
@@ -420,6 +435,7 @@ class App(tk.Tk):
         add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
         add_separator()
         add_control_widget(_ButtonWithEntry, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, display_list=["Kp", "Ki", "Kd"])
+        add_control_widget(_MultipleButtons, ["PID Debug", "Approach Debug"], [self._show_pid_debug, self._show_approach_debug])
         const_current_frame = ttk.Frame(self.control_frames)
         const_current_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
         const_current_frame.grid_columnconfigure(1, weight=1)
@@ -613,6 +629,115 @@ class App(tk.Tk):
         self.scan_adc_frame.save_figure(f"{image_path_prefix}_adc_{ts}.png")
         self.scan_dacz_frame.save_figure(f"{image_path_prefix}_dacz_{ts}.png")
         print(f"Scan images and data saved with prefix {image_path_prefix}")
+
+    def _show_pid_debug(self):
+        """Display PID debug information in a popup window."""
+        debug_info = self.stm.get_pid_debug()
+        
+        debug_window = tk.Toplevel(self)
+        debug_window.title("PID Debug Information")
+        debug_window.geometry("400x200")
+        
+        # Create text widget with scrollbar
+        text_frame = ttk.Frame(debug_window)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        text_widget = tk.Text(text_frame, wrap=tk.WORD, height=8)
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        
+        text_widget.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Insert debug information
+        text_widget.insert(tk.END, f"PID Debug Information:\n\n{debug_info}\n\n")
+        text_widget.insert(tk.END, "Tuning Tips:\n")
+        text_widget.insert(tk.END, "• Increase Kp for faster response\n")
+        text_widget.insert(tk.END, "• Increase Ki to eliminate steady-state error\n")
+        text_widget.insert(tk.END, "• Increase Kd to reduce oscillations\n")
+        text_widget.insert(tk.END, "• Start with small values and increase gradually\n")
+        
+        text_widget.config(state=tk.DISABLED)
+        
+        # Add refresh button
+        refresh_button = ttk.Button(debug_window, text="Refresh", 
+                                  command=lambda: self._refresh_pid_debug(text_widget))
+        refresh_button.pack(pady=5)
+
+    def _refresh_pid_debug(self, text_widget):
+        """Refresh PID debug information."""
+        debug_info = self.stm.get_pid_debug()
+        text_widget.config(state=tk.NORMAL)
+        text_widget.delete(1.0, tk.END)
+        text_widget.insert(tk.END, f"PID Debug Information:\n\n{debug_info}\n\n")
+        text_widget.insert(tk.END, "Tuning Tips:\n")
+        text_widget.insert(tk.END, "• Increase Kp for faster response\n")
+        text_widget.insert(tk.END, "• Increase Ki to eliminate steady-state error\n")
+        text_widget.insert(tk.END, "• Increase Kd to reduce oscillations\n")
+        text_widget.insert(tk.END, "• Start with small values and increase gradually\n")
+        text_widget.config(state=tk.DISABLED)
+
+    def _show_approach_debug(self):
+        """Display approach debug information in a popup window."""
+        debug_info = self.stm.get_approach_debug()
+        
+        debug_window = tk.Toplevel(self)
+        debug_window.title("Approach Debug Information")
+        debug_window.geometry("500x300")
+        
+        # Create text widget with scrollbar
+        text_frame = ttk.Frame(debug_window)
+        text_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        text_widget = tk.Text(text_frame, wrap=tk.WORD, height=12)
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+        text_widget.configure(yscrollcommand=scrollbar.set)
+        
+        text_widget.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Insert debug information
+        text_widget.insert(tk.END, f"Approach Debug Information:\n\n{debug_info}\n\n")
+        text_widget.insert(tk.END, "Smart Approach Features:\n")
+        text_widget.insert(tk.END, "• Overshoot Detection: Detects when tip crashes into surface\n")
+        text_widget.insert(tk.END, "• Recovery Mode: Automatically retracts tip when overshoot detected\n")
+        text_widget.insert(tk.END, "• Fine Approach: Uses smaller steps after recovery\n")
+        text_widget.insert(tk.END, "• Adaptive Range: Expands search range if target not found\n\n")
+        text_widget.insert(tk.END, "Troubleshooting:\n")
+        text_widget.insert(tk.END, "• If overshoot occurs frequently, reduce approach speed\n")
+        text_widget.insert(tk.END, "• If recovery fails, check Z-piezo range and tip condition\n")
+        text_widget.insert(tk.END, "• Monitor ADC values to ensure proper current detection\n")
+        
+        text_widget.config(state=tk.DISABLED)
+        
+        # Add control buttons
+        button_frame = ttk.Frame(debug_window)
+        button_frame.pack(pady=5)
+        
+        refresh_button = ttk.Button(button_frame, text="Refresh", 
+                                  command=lambda: self._refresh_approach_debug(text_widget))
+        refresh_button.pack(side='left', padx=5)
+        
+        recovery_button = ttk.Button(button_frame, text="Trigger Recovery (Test)", 
+                                   command=self.stm.trigger_approach_recovery)
+        recovery_button.pack(side='left', padx=5)
+
+    def _refresh_approach_debug(self, text_widget):
+        """Refresh approach debug information."""
+        debug_info = self.stm.get_approach_debug()
+        text_widget.config(state=tk.NORMAL)
+        text_widget.delete(1.0, tk.END)
+        text_widget.insert(tk.END, f"Approach Debug Information:\n\n{debug_info}\n\n")
+        text_widget.insert(tk.END, "Smart Approach Features:\n")
+        text_widget.insert(tk.END, "• Overshoot Detection: Detects when tip crashes into surface\n")
+        text_widget.insert(tk.END, "• Recovery Mode: Automatically retracts tip when overshoot detected\n")
+        text_widget.insert(tk.END, "• Fine Approach: Uses smaller steps after recovery\n")
+        text_widget.insert(tk.END, "• Adaptive Range: Expands search range if target not found\n\n")
+        text_widget.insert(tk.END, "Troubleshooting:\n")
+        text_widget.insert(tk.END, "• If overshoot occurs frequently, reduce approach speed\n")
+        text_widget.insert(tk.END, "• If recovery fails, check Z-piezo range and tip condition\n")
+        text_widget.insert(tk.END, "• Monitor ADC values to ensure proper current detection\n")
+        text_widget.config(state=tk.DISABLED)
 
 if __name__ == "__main__":
     app = App()

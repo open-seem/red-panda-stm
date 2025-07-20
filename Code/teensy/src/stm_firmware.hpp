@@ -75,6 +75,8 @@ public:
     bool is_approaching = false; /**< Approach flag */
     bool is_const_current = false; /**< Constant current flag */
     bool is_scanning = false; /**< Scanning flag */
+    int approach_direction = 1; /**< Approach direction: 1 for forward, -1 for backward */
+    bool approach_recovery = false; /**< Recovery mode flag */
     uint32_t time_millis = 0; /**< Time in milliseconds */
 
     /**
@@ -83,7 +85,7 @@ public:
      */
     void to_char(char *buffer)
     {
-        sprintf(buffer, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu", bias, dac_z, dac_x, dac_y, adc, steps, is_approaching, is_const_current, is_scanning, time_millis);
+        sprintf(buffer, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lu", bias, dac_z, dac_x, dac_y, adc, steps, is_approaching, is_const_current, is_scanning, approach_direction, approach_recovery, time_millis);
     }
 };
 
@@ -98,6 +100,7 @@ struct Approach_Config
     int target_dac; /**< Target DAC value */
     int max_steps; /**< Maximum number of motor steps */
     int step_interval; /**< Step interval */
+    int direction; /**< Approach direction: 1 for forward, -1 for backward */
 };
 
 /**
@@ -173,47 +176,79 @@ public:
 
     // DACs
     /**
-     * @brief Sets the Z DAC value.
+     * @brief Sets the Z DAC value with bounds checking.
      * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     * @return true if value was set successfully, false if out of bounds.
      */
-    void set_dac_z(int value)
+    bool set_dac_z(int value)
     {
+        if (value < MIN_DAC_OUT || value > MAX_DAC_OUT)
+        {
+            Serial.print("ERROR: Z DAC value out of range: ");
+            Serial.println(value);
+            return false;
+        }
         dac_z.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_z = value;
         stm_status.time_millis = millis();
+        return true;
     }
 
     /**
-     * @brief Sets the X DAC value.
+     * @brief Sets the X DAC value with bounds checking.
      * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     * @return true if value was set successfully, false if out of bounds.
      */
-    void set_dac_x(int value)
+    bool set_dac_x(int value)
     {
+        if (value < MIN_DAC_OUT || value > MAX_DAC_OUT)
+        {
+            Serial.print("ERROR: X DAC value out of range: ");
+            Serial.println(value);
+            return false;
+        }
         dac_x.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_x = value;
         stm_status.time_millis = millis();
+        return true;
     }
 
     /**
-     * @brief Sets the Y DAC value.
+     * @brief Sets the Y DAC value with bounds checking.
      * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     * @return true if value was set successfully, false if out of bounds.
      */
-    void set_dac_y(int value)
+    bool set_dac_y(int value)
     {
+        if (value < MIN_DAC_OUT || value > MAX_DAC_OUT)
+        {
+            Serial.print("ERROR: Y DAC value out of range: ");
+            Serial.println(value);
+            return false;
+        }
         dac_y.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.dac_y = value;
         stm_status.time_millis = millis();
+        return true;
     }
 
     /**
-     * @brief Sets the bias DAC value.
+     * @brief Sets the bias DAC value with bounds checking.
      * @param value The value to set, from MIN_DAC_OUT to MAX_DAC_OUT.
+     * @return true if value was set successfully, false if out of bounds.
      */
-    void set_dac_bias(int value)
+    bool set_dac_bias(int value)
     {
+        if (value < MIN_DAC_OUT || value > MAX_DAC_OUT)
+        {
+            Serial.print("ERROR: Bias DAC value out of range: ");
+            Serial.println(value);
+            return false;
+        }
         dac_bias.write(CMD_WR_UPDATE_DAC_REG, value);
         stm_status.bias = value;
         stm_status.time_millis = millis();
+        return true;
     }
 
     // ADC
@@ -266,29 +301,61 @@ public:
 
     Approach_Config approach_config = Approach_Config();
 
-    int approach_z_value;
+    int approach_z_start;
+    int approach_z_current;
+    int approach_z_range;
+    int approach_z_step;
     bool z_sweep_in_progress;
     int motor_steps_to_take;
+    int approach_attempts;
+    static const int MAX_APPROACH_ATTEMPTS = 3;
+    
+    // Smart approach recovery variables
+    bool approach_overshoot_detected;
+    bool approach_recovery_mode;
+    int approach_recovery_steps;
+    int approach_fine_step_size;
+    static const int MAX_RECOVERY_STEPS = 50;
+    static const double OVERSHOOT_THRESHOLD = 2.0; // 2x target = overshoot
 
     /**
      * @brief Starts the automated approach sequence.
      * @param target_adc The target ADC value to stop the approach.
      * @param max_motor_steps The maximum number of motor steps to take.
      * @param step_interval The number of steps to take in each iteration.
+     * @param direction The approach direction: 1 for forward, -1 for backward.
      */
-    void start_approach(int target_adc, int max_motor_steps, int step_interval)
+    void start_approach(int target_adc, int max_motor_steps, int step_interval, int direction = 1)
     {
-        approach_config.max_steps = stepper_motor.get_total_steps() + max_motor_steps;
+        approach_config.max_steps = stepper_motor.get_total_steps() + (max_motor_steps * abs(direction));
         approach_config.step_interval = step_interval;
         approach_config.target_dac = target_adc;
+        approach_config.direction = (direction >= 0) ? 1 : -1; // Ensure only 1 or -1
         stm_status.is_approaching = true;
+        stm_status.approach_direction = approach_config.direction;
         z_sweep_in_progress = false;
-        approach_z_value = -23000;
+        
+        // Smart approach: start from current Z position with adaptive range
+        approach_z_start = stm_status.dac_z;
+        approach_z_current = approach_z_start;
+        approach_z_range = 2000; // Start with smaller range
+        approach_z_step = 50; // Smaller steps for better resolution
         motor_steps_to_take = 0;
+        approach_attempts = 0;
+        
+        // Initialize recovery mode variables
+        approach_overshoot_detected = false;
+        approach_recovery_mode = false;
+        approach_recovery_steps = 0;
+        approach_fine_step_size = 10; // Fine steps for recovery
+        
+        Serial.print("Starting approach in ");
+        Serial.print(approach_config.direction == 1 ? "FORWARD" : "BACKWARD");
+        Serial.println(" direction");
     }
 
     /**
-     * @brief Executes one step of the approach sequence.
+     * @brief Executes one step of the improved approach sequence.
      * @return True if the approach is complete, false otherwise.
      */
     bool approach()
@@ -301,25 +368,48 @@ public:
         // State 1: Move motor if there are steps to take
         if (motor_steps_to_take > 0)
         {
-            stepper_motor.step(1); // Move one step forward
+            stepper_motor.step(approach_config.direction); // Move one step in configured direction
             motor_steps_to_take--;
             stm_status.steps = stepper_motor.get_total_steps();
-            delay(2); // A small delay for the motor to settle.
+            delay(2); // A small delay for the motor to settle
             return false; // Return to allow main loop to run
         }
 
-        // State 2: Perform Z-DAC sweep
+        // State 2: Perform smart Z-DAC sweep with overshoot detection
         if (z_sweep_in_progress)
         {
-            approach_z_value += 100;
-            if (approach_z_value <= 17000)
+            approach_z_current += approach_z_step;
+            int z_limit = approach_z_start + approach_z_range;
+            
+            if (approach_z_current <= z_limit && approach_z_current <= MAX_DAC_OUT)
             {
-                set_dac_z(approach_z_value);
-                delayMicroseconds(100); // Short delay for DAC to settle
+                set_dac_z(approach_z_current);
+                delayMicroseconds(200); // Slightly longer delay for stability
                 update();
-                if (read_adc() > approach_config.target_dac)
+                int current_adc = read_adc();
+                
+                // Check for overshoot (current much higher than target)
+                if (current_adc > approach_config.target_dac * OVERSHOOT_THRESHOLD)
                 {
-                    Serial.println("Approached!");
+                    Serial.print("Overshoot detected! ADC: ");
+                    Serial.print(current_adc);
+                    Serial.print(" Target: ");
+                    Serial.println(approach_config.target_dac);
+                    
+                    approach_overshoot_detected = true;
+                    approach_recovery_mode = true;
+                    approach_recovery_steps = 0;
+                    z_sweep_in_progress = false;
+                    stm_status.approach_recovery = true;
+                    
+                    // Start recovery by moving Z away from surface
+                    Serial.println("Starting recovery mode - retracting tip");
+                    return false;
+                }
+                // Normal target detection
+                else if (current_adc > approach_config.target_dac)
+                {
+                    Serial.println("Target reached successfully!");
                     stm_status.is_approaching = false;
                     z_sweep_in_progress = false;
                     stepper_motor.disable();
@@ -330,24 +420,113 @@ public:
             {
                 // Z sweep finished, did not find target
                 z_sweep_in_progress = false;
+                approach_attempts++;
+                
+                // Adaptive range expansion
+                if (approach_attempts < MAX_APPROACH_ATTEMPTS)
+                {
+                    approach_z_range *= 2; // Double the range for next attempt
+                    if (approach_z_range > 20000) approach_z_range = 20000; // Cap the range
+                    Serial.print("Expanding Z search range to: ");
+                    Serial.println(approach_z_range);
+                }
             }
             return false; // Return to allow main loop to run
         }
+        
+        // State 2.5: Recovery mode - handle overshoot
+        if (approach_recovery_mode)
+        {
+            if (approach_recovery_steps < MAX_RECOVERY_STEPS)
+            {
+                // Move Z away from surface in small steps
+                int recovery_z = approach_z_current - (approach_recovery_steps * approach_fine_step_size);
+                
+                if (recovery_z >= MIN_DAC_OUT)
+                {
+                    set_dac_z(recovery_z);
+                    delayMicroseconds(100);
+                    update();
+                    int current_adc = read_adc();
+                    
+                    // Check if we're back in acceptable range
+                    if (current_adc <= approach_config.target_dac * 1.2) // 20% above target is acceptable
+                    {
+                        Serial.print("Recovery successful at Z: ");
+                        Serial.print(recovery_z);
+                        Serial.print(" ADC: ");
+                        Serial.println(current_adc);
+                        
+                        // Start fine approach from this position
+                        approach_z_start = recovery_z;
+                        approach_z_current = recovery_z;
+                        approach_z_range = 500; // Small range for fine approach
+                        approach_z_step = approach_fine_step_size; // Fine steps
+                        approach_recovery_mode = false;
+                        stm_status.approach_recovery = false;
+                        z_sweep_in_progress = true;
+                        
+                        Serial.println("Starting fine approach");
+                        return false;
+                    }
+                    
+                    approach_recovery_steps++;
+                }
+                else
+                {
+                    Serial.println("Recovery failed: reached Z limit");
+                    approach_recovery_mode = false;
+                    stm_status.approach_recovery = false;
+                    stm_status.is_approaching = false;
+                    return false;
+                }
+            }
+            else
+            {
+                Serial.println("Recovery failed: max recovery steps reached");
+                approach_recovery_mode = false;
+                stm_status.approach_recovery = false;
+                stm_status.is_approaching = false;
+                return false;
+            }
+            return false;
+        }
 
         // State 3: Check max steps and prepare for next cycle
-        if (stepper_motor.get_total_steps() < approach_config.max_steps)
+        if (!approach_overshoot_detected) // Only continue normal approach if no overshoot
         {
-            // Prepare for next motor move and Z-sweep cycle
-            motor_steps_to_take = approach_config.step_interval;
-            approach_z_value = -23000; // Reset Z DAC for new sweep
-            z_sweep_in_progress = true;
-        }
-        else
-        {
-            // Reached max steps
-            Serial.println("Approach failed: Max steps reached.");
-            stm_status.is_approaching = false;
-            return false; // Approach finished unsuccessfully
+            bool within_step_limit;
+            if (approach_config.direction == 1)
+            {
+                within_step_limit = stepper_motor.get_total_steps() < approach_config.max_steps;
+            }
+            else
+            {
+                within_step_limit = stepper_motor.get_total_steps() > (approach_config.max_steps - (approach_config.max_steps * 2));
+            }
+            
+            if (within_step_limit && approach_attempts < MAX_APPROACH_ATTEMPTS)
+            {
+                // Prepare for next motor move and Z-sweep cycle
+                motor_steps_to_take = approach_config.step_interval;
+                approach_z_start = stm_status.dac_z; // Update start position
+                approach_z_current = approach_z_start;
+                z_sweep_in_progress = true;
+            }
+            else
+            {
+                // Reached max steps or max attempts
+                if (!within_step_limit)
+                {
+                    Serial.println("Approach failed: Max steps reached.");
+                }
+                else
+                {
+                    Serial.println("Approach failed: Max attempts reached.");
+                }
+                stm_status.is_approaching = false;
+                return false; // Approach finished unsuccessfully
+            }
         }
 
         return false;
@@ -415,46 +594,148 @@ public:
         }
         Serial.print("\r\n");
     }
-    // Specify the links and initial tuning parameters
-    // Constant current mode
+    // Improved PID controller for constant current mode
     bool is_const_current = false;
     int adc_set_value;
     double adc_set_value_log, adc_real_value_log, dac_z_control_value;
 
-    // PID current_pid = PID(&adc_real_value_log_log, &dac_z_control_value, &adc_set_value_log_log, INIT_KP, INIT_KI, INIT_KD, DIRECT);
+    // Enhanced PID parameters and state variables
     double Kp = 0.0, Ki = 0.0, Kd = 0.0;
-    double pTerm, iTerm;
+    double pTerm, iTerm, dTerm;
+    double prev_error = 0.0;
+    double integral_max = 15000.0; // Anti-windup limit (about half DAC range)
+    double integral_min = -15000.0;
+    uint32_t last_pid_time = 0;
+    static const uint32_t PID_SAMPLE_TIME = 1; // 1ms minimum sample time
+    
     void turn_on_const_current(int target_adc)
     {
         this->adc_set_value = target_adc;
         this->adc_set_value_log = static_cast<double>(logTable[abs(target_adc)]);
         this->dac_z_control_value = static_cast<double>(stm_status.dac_z);
+        
+        // Reset PID state
         pTerm = 0.0;
         iTerm = 0.0;
+        dTerm = 0.0;
+        prev_error = 0.0;
+        last_pid_time = millis();
+        
         this->stm_status.is_const_current = true;
+        Serial.println("Constant current mode ON");
     }
+    
     int control_current(int adc_value)
     {
+        uint32_t current_time = millis();
+        uint32_t time_delta = current_time - last_pid_time;
+        
+        // Enforce minimum sample time for derivative calculation stability
+        if (time_delta < PID_SAMPLE_TIME)
+        {
+            return static_cast<int>(prev_error); // Return previous error without updating
+        }
+        
         this->adc_real_value_log = static_cast<double>(logTable[abs(adc_value)]);
         double error = this->adc_set_value_log - this->adc_real_value_log;
+        double dt = static_cast<double>(time_delta) / 1000.0; // Convert to seconds
+        
+        // Proportional term
         pTerm = Kp * error;
-        iTerm += Ki * error;
-         
-         // BUG FIX 5: Clamp integrator term to the full DAC output range
-         iTerm = clamp_value(iTerm, MIN_DAC_OUT, MAX_DAC_OUT);
- 
-         // BUG FIX 5: Remove "+ 32768" offset, as we are now in Two's Complement mode.
-         double z_double = pTerm + iTerm;
-         
-         // Clamp final output to the valid 16-bit signed range.
-         int z = static_cast<int>(clamp_value(z_double, MIN_DAC_OUT, MAX_DAC_OUT));
- 
+        
+        // Integral term with anti-windup
+        double integral_candidate = iTerm + Ki * error * dt;
+        
+        // Anti-windup: only update integral if output won't saturate
+        double tentative_output = pTerm + integral_candidate;
+        if (tentative_output >= MIN_DAC_OUT && tentative_output <= MAX_DAC_OUT)
+        {
+            iTerm = integral_candidate;
+        }
+        // Additional clamping for safety
+        iTerm = clamp_value(iTerm, integral_min, integral_max);
+        
+        // Derivative term (with derivative kick prevention)
+        if (dt > 0)
+        {
+            dTerm = Kd * (error - prev_error) / dt;
+        }
+        else
+        {
+            dTerm = 0.0;
+        }
+        
+        // Calculate final output
+        double z_double = pTerm + iTerm + dTerm;
+        
+        // Clamp final output to valid DAC range
+        int z = static_cast<int>(clamp_value(z_double, MIN_DAC_OUT, MAX_DAC_OUT));
+        
+        // Update state for next iteration
+        prev_error = error;
+        last_pid_time = current_time;
+        
         this->set_dac_z(z);
         return static_cast<int>(error);
     }
+    
     void turn_off_const_current()
     {
         this->stm_status.is_const_current = false;
+        Serial.println("Constant current mode OFF");
+    }
+    
+    /**
+     * @brief Gets current PID state for debugging
+     */
+    void print_pid_debug()
+    {
+        Serial.print("PID Debug - P:");
+        Serial.print(pTerm);
+        Serial.print(" I:");
+        Serial.print(iTerm);
+        Serial.print(" D:");
+        Serial.print(dTerm);
+        Serial.print(" Error:");
+        Serial.println(prev_error);
+    }
+    
+    /**
+     * @brief Gets current approach state for debugging
+     */
+    void print_approach_debug()
+    {
+        Serial.print("Approach Debug - Z:");
+        Serial.print(approach_z_current);
+        Serial.print(" Range:");
+        Serial.print(approach_z_range);
+        Serial.print(" Step:");
+        Serial.print(approach_z_step);
+        Serial.print(" Attempts:");
+        Serial.print(approach_attempts);
+        Serial.print(" Recovery:");
+        Serial.print(approach_recovery_mode ? "ON" : "OFF");
+        Serial.print(" Overshoot:");
+        Serial.println(approach_overshoot_detected ? "YES" : "NO");
+    }
+    
+    /**
+     * @brief Manually trigger approach recovery mode (for testing)
+     */
+    void trigger_approach_recovery()
+    {
+        if (stm_status.is_approaching)
+        {
+            Serial.println("Manually triggering approach recovery");
+            approach_overshoot_detected = true;
+            approach_recovery_mode = true;
+            approach_recovery_steps = 0;
+            z_sweep_in_progress = false;
+        }
+        else
+        {
+            Serial.println("Not in approach mode - cannot trigger recovery");
+        }
     }
     // Scan Control
     int scan_image_z[2048];
@@ -462,7 +743,11 @@ public:
 
     void start_scan(int x_start, int x_end, int x_resolution, int y_start, int y_end, int y_resolution, int sample_per_pixel)
     {
-        move_to(x_start, y_start);
+        if (!move_to(x_start, y_start))
+        {
+            Serial.println("ERROR: Failed to move to scan start position");
+            return;
+        }
         double x_step = 1.0f * (x_end - x_start) / x_resolution;
         double y_step = 1.0f * (y_end - y_start) / y_resolution / sample_per_pixel;
         for (int x_i = 0; x_i < x_resolution; ++x_i)
@@ -520,52 +805,73 @@ public:
         }
         Serial.print("\r\n");
     }
-    void move_to(int target_x, int target_y)
+    bool move_to(int target_x, int target_y)
     {
+        // Move X axis
         while (target_x != stm_status.dac_x)
         {
             if (stm_status.is_const_current)
             {
                 control_current(read_adc_raw());
             }
+            
+            int next_x;
             if (abs(target_x - stm_status.dac_x) < MOVE_SPEED)
             {
-                set_dac_x(target_x);
+                next_x = target_x;
             }
             else
             {
                 if (target_x > stm_status.dac_x)
                 {
-                    set_dac_x(stm_status.dac_x + MOVE_SPEED);
+                    next_x = stm_status.dac_x + MOVE_SPEED;
                 }
                 else
                 {
-                    set_dac_x(stm_status.dac_x - MOVE_SPEED);
+                    next_x = stm_status.dac_x - MOVE_SPEED;
                 }
             }
+            
+            if (!set_dac_x(next_x))
+            {
+                Serial.println("ERROR: Failed to move X axis");
+                return false;
+            }
         }
+        
+        // Move Y axis
         while (target_y != stm_status.dac_y)
         {
             if (stm_status.is_const_current)
             {
                 control_current(read_adc_raw());
             }
+            
+            int next_y;
             if (abs(target_y - stm_status.dac_y) < MOVE_SPEED)
             {
-                set_dac_y(target_y);
+                next_y = target_y;
             }
             else
             {
                 if (target_y > stm_status.dac_y)
                 {
-                    set_dac_y(stm_status.dac_y + MOVE_SPEED);
+                    next_y = stm_status.dac_y + MOVE_SPEED;
                 }
                 else
                 {
-                    set_dac_y(stm_status.dac_y - MOVE_SPEED);
+                    next_y = stm_status.dac_y - MOVE_SPEED;
                 }
             }
+            
+            if (!set_dac_y(next_y))
+            {
+                Serial.println("ERROR: Failed to move Y axis");
+                return false;
+            }
         }
+        
+        return true;
     }
 
     // Piezo

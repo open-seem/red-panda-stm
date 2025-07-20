@@ -93,7 +93,9 @@ void serialCommand(String command, STM &stm)
       int adc_target = Serial.parseInt();
       int max_steps = Serial.parseInt();
       int step_interval = Serial.parseInt();
-      stm.start_approach(adc_target, max_steps, step_interval);
+      int direction = Serial.parseInt();
+      if (direction == 0) direction = 1; // Default to forward if not specified
+      stm.start_approach(adc_target, max_steps, step_interval, direction);
     }
     // MeasureIV
     if (command == "IVME")
@@ -142,6 +144,21 @@ void serialCommand(String command, STM &stm)
     if (command == "TEST")
     {
       stm.test_piezo();
+    }
+    // PID Debug
+    if (command == "PIDD")
+    {
+      stm.print_pid_debug();
+    }
+    // Approach Debug
+    if (command == "APRD")
+    {
+      stm.print_approach_debug();
+    }
+    // Trigger Recovery
+    if (command == "APRR")
+    {
+      stm.trigger_approach_recovery();
     }
 
   }
