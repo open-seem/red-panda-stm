@@ -150,7 +150,7 @@ class ApproachAndMotorControl(ttk.Frame):
         fine_step_entry.grid(row=5, column=2, sticky='ew', pady=2)
 
         ttk.Label(self, text="Sweep Range:").grid(row=6, column=1, sticky='w')
-        self.sweep_range_var = tk.StringVar(value="2000")
+        self.sweep_range_var = tk.StringVar(value="20000")
         sweep_range_entry = ttk.Entry(self, textvariable=self.sweep_range_var, width=10)
         sweep_range_entry.grid(row=6, column=2, sticky='ew', pady=2)
 
