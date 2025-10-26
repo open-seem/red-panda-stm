@@ -161,6 +161,14 @@ void serialCommand(String command, STM &stm)
       stm.trigger_approach_recovery();
     }
 
+    // Enable fine motor mode (single-step between Z sweeps)
+    if (command == "FINE")
+    {
+      stm.enable_fine_motor_mode();
+    }
+
+    // Note: APST (stop approach) command removed; use STOP to halt operations.
+
   }
 }
 
@@ -197,7 +205,7 @@ STM stm = STM(); /**< The main STM control object. */
 void setup()
 {
   // initialize the serial port
-  Serial.begin(115200);
+  Serial.begin(230400);
   // initialize SPI:
   SPI.begin();
   // Set Up SPI1 for Teensy 4.1

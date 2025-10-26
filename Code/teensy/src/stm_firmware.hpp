@@ -307,6 +307,7 @@ public:
     int approach_z_step;
     bool z_sweep_in_progress;
     int motor_steps_to_take;
+    bool fine_motor_mode; // when true, use single motor step between sweeps for fine adjustment
     int approach_attempts;
     static const int MAX_APPROACH_ATTEMPTS = 3;
     
@@ -315,6 +316,11 @@ public:
     bool approach_recovery_mode;
     int approach_recovery_steps;
     int approach_fine_step_size;
+    /**
+     * @brief Runtime debug verbosity level.
+     * 0 = errors only, 1 = important state messages (default), 2 = verbose debug
+     */
+    int debug_level = 1;
     static const int MAX_RECOVERY_STEPS = 50;
     static const double OVERSHOOT_THRESHOLD = 2.0; // 2x target = overshoot
 
@@ -341,6 +347,7 @@ public:
         approach_z_range = 2000; // Start with smaller range
         approach_z_step = 50; // Smaller steps for better resolution
         motor_steps_to_take = 0;
+        fine_motor_mode = false;
         approach_attempts = 0;
         
         // Initialize recovery mode variables
@@ -349,9 +356,38 @@ public:
         approach_recovery_steps = 0;
         approach_fine_step_size = 10; // Fine steps for recovery
         
-        Serial.print("Starting approach in ");
-        Serial.print(approach_config.direction == 1 ? "FORWARD" : "BACKWARD");
-        Serial.println(" direction");
+        if (debug_level >= 1)
+        {
+            Serial.print("Starting approach in ");
+            Serial.print(approach_config.direction == 1 ? "FORWARD" : "BACKWARD");
+            Serial.println(" direction");
+        }
+    }
+
+    /**
+     * @brief Enable fine motor mode: perform 1 motor step between Z sweeps.
+     */
+    void enable_fine_motor_mode()
+    {
+        fine_motor_mode = true;
+        if (debug_level >= 1)
+        {
+            Serial.println("Fine motor mode ENABLED");
+        }
+    }
+
+    /**
+     * @brief Set runtime debug verbosity level.
+     * @param level 0=errors only,1=important,2=verbose
+     */
+    void set_debug_level(int level)
+    {
+        debug_level = level;
+        if (debug_level >= 1)
+        {
+            Serial.print("Debug level set to ");
+            Serial.println(debug_level);
+        }
     }
 
     /**
@@ -371,7 +407,7 @@ public:
             stepper_motor.step(approach_config.direction); // Move one step in configured direction
             motor_steps_to_take--;
             stm_status.steps = stepper_motor.get_total_steps();
-            delay(2); // A small delay for the motor to settle
+            delayMicroseconds(500); // Reduced delay for faster response
             return false; // Return to allow main loop to run
         }
 
@@ -391,25 +427,34 @@ public:
                 // Check for overshoot (current much higher than target)
                 if (current_adc > approach_config.target_dac * OVERSHOOT_THRESHOLD)
                 {
-                    Serial.print("Overshoot detected! ADC: ");
-                    Serial.print(current_adc);
-                    Serial.print(" Target: ");
-                    Serial.println(approach_config.target_dac);
-                    
+                    if (debug_level >= 1)
+                    {
+                        Serial.print("Overshoot detected! ADC: ");
+                        Serial.print(current_adc);
+                        Serial.print(" Target: ");
+                        Serial.println(approach_config.target_dac);
+                    }
+
                     approach_overshoot_detected = true;
                     approach_recovery_mode = true;
                     approach_recovery_steps = 0;
                     z_sweep_in_progress = false;
                     stm_status.approach_recovery = true;
-                    
+
                     // Start recovery by moving Z away from surface
-                    Serial.println("Starting recovery mode - retracting tip");
+                    if (debug_level >= 1)
+                    {
+                        Serial.println("Starting recovery mode - retracting tip");
+                    }
                     return false;
                 }
                 // Normal target detection
                 else if (current_adc > approach_config.target_dac)
                 {
-                    Serial.println("Target reached successfully!");
+                    if (debug_level >= 1)
+                    {
+                        Serial.println("Target reached successfully!");
+                    }
                     stm_status.is_approaching = false;
                     z_sweep_in_progress = false;
                     stepper_motor.disable();
@@ -423,13 +468,16 @@ public:
                 approach_attempts++;
                 
                 // Adaptive range expansion
-                if (approach_attempts < MAX_APPROACH_ATTEMPTS)
-                {
-                    approach_z_range *= 2; // Double the range for next attempt
-                    if (approach_z_range > 20000) approach_z_range = 20000; // Cap the range
-                    Serial.print("Expanding Z search range to: ");
-                    Serial.println(approach_z_range);
-                }
+                    if (approach_attempts < MAX_APPROACH_ATTEMPTS)
+                    {
+                        approach_z_range *= 2; // Double the range for next attempt
+                        if (approach_z_range > 20000) approach_z_range = 20000; // Cap the range
+                        if (debug_level >= 2)
+                        {
+                            Serial.print("Expanding Z search range to: ");
+                            Serial.println(approach_z_range);
+                        }
+                    }
             }
             return false; // Return to allow main loop to run
         }
@@ -505,10 +553,20 @@ public:
                 within_step_limit = stepper_motor.get_total_steps() > (approach_config.max_steps - (approach_config.max_steps * 2));
             }
             
-            if (within_step_limit && approach_attempts < MAX_APPROACH_ATTEMPTS)
+            // If fine motor mode is enabled we want to continue until the user stops us.
+            bool attempts_ok = (approach_attempts < MAX_APPROACH_ATTEMPTS) || fine_motor_mode;
+            if (within_step_limit && attempts_ok)
             {
                 // Prepare for next motor move and Z-sweep cycle
-                motor_steps_to_take = approach_config.step_interval;
+                if (fine_motor_mode || approach_recovery_mode || approach_z_range <= 500)
+                {
+                    // Use single-step motor increment for fine adjustment
+                    motor_steps_to_take = 1;
+                }
+                else
+                {
+                    motor_steps_to_take = approach_config.step_interval;
+                }
                 approach_z_start = stm_status.dac_z; // Update start position
                 approach_z_current = approach_z_start;
                 z_sweep_in_progress = true;
@@ -622,7 +680,10 @@ public:
         last_pid_time = millis();
         
         this->stm_status.is_const_current = true;
-        Serial.println("Constant current mode ON");
+        if (debug_level >= 1)
+        {
+            Serial.println("Constant current mode ON");
+        }
     }
     
     int control_current(int adc_value)
@@ -682,7 +743,10 @@ public:
     void turn_off_const_current()
     {
         this->stm_status.is_const_current = false;
-        Serial.println("Constant current mode OFF");
+        if (debug_level >= 1)
+        {
+            Serial.println("Constant current mode OFF");
+        }
     }
     
     /**
@@ -690,14 +754,17 @@ public:
      */
     void print_pid_debug()
     {
-        Serial.print("PID Debug - P:");
-        Serial.print(pTerm);
-        Serial.print(" I:");
-        Serial.print(iTerm);
-        Serial.print(" D:");
-        Serial.print(dTerm);
-        Serial.print(" Error:");
-        Serial.println(prev_error);
+        if (debug_level >= 2)
+        {
+            Serial.print("PID Debug - P:");
+            Serial.print(pTerm);
+            Serial.print(" I:");
+            Serial.print(iTerm);
+            Serial.print(" D:");
+            Serial.print(dTerm);
+            Serial.print(" Error:");
+            Serial.println(prev_error);
+        }
     }
     
     /**
@@ -705,18 +772,21 @@ public:
      */
     void print_approach_debug()
     {
-        Serial.print("Approach Debug - Z:");
-        Serial.print(approach_z_current);
-        Serial.print(" Range:");
-        Serial.print(approach_z_range);
-        Serial.print(" Step:");
-        Serial.print(approach_z_step);
-        Serial.print(" Attempts:");
-        Serial.print(approach_attempts);
-        Serial.print(" Recovery:");
-        Serial.print(approach_recovery_mode ? "ON" : "OFF");
-        Serial.print(" Overshoot:");
-        Serial.println(approach_overshoot_detected ? "YES" : "NO");
+        if (debug_level >= 2)
+        {
+            Serial.print("Approach Debug - Z:");
+            Serial.print(approach_z_current);
+            Serial.print(" Range:");
+            Serial.print(approach_z_range);
+            Serial.print(" Step:");
+            Serial.print(approach_z_step);
+            Serial.print(" Attempts:");
+            Serial.print(approach_attempts);
+            Serial.print(" Recovery:");
+            Serial.print(approach_recovery_mode ? "ON" : "OFF");
+            Serial.print(" Overshoot:");
+            Serial.println(approach_overshoot_detected ? "YES" : "NO");
+        }
     }
     
     /**
@@ -906,7 +976,8 @@ public:
 private:
      // DAC output mode register setting
      static const uint16_t MODE_BIPOLAR_10V = 0b0000000000001010; // -10V to +10V
-     static const uint16_t MODE_BIPOLAR_5V  = 0b0000000000001001; // -5V to +5V
+     static const uint16_t MODE_BIPOLAR_5V  = 0b0000000000000101; // -5V to +5V
+     static const uint16_t MODE_3V = 0b0000000000000011 
 
 
      // DAC objects

@@ -109,6 +109,9 @@ class ApproachAndMotorControl(ttk.Frame):
         stop_button = ttk.Button(button_frame, text="Stop", command=self.stm.stepper_stop)
         stop_button.grid(row=3, column=0, sticky='ew', pady=2)
 
+        fine_button = ttk.Button(button_frame, text="Fine", command=self._enable_fine)
+        fine_button.grid(row=4, column=0, sticky='ew', pady=2)
+
         # --- Labels and Entries ---
         ttk.Label(self, text="Target:").grid(row=0, column=1, sticky='w')
         self.target_var = tk.StringVar(value="500")
@@ -152,6 +155,8 @@ class ApproachAndMotorControl(ttk.Frame):
         try:
             steps = int(self.steps_var.get())
             self.stm.move_motor(-steps)
+            # Force immediate GUI update after motor move
+            self.after_idle(lambda: self.stm.get_status())
         except ValueError:
             self.steps_var.set("10")
 
@@ -159,8 +164,15 @@ class ApproachAndMotorControl(ttk.Frame):
         try:
             steps = int(self.steps_var.get())
             self.stm.move_motor(steps)
+            # Force immediate GUI update after motor move
+            self.after_idle(lambda: self.stm.get_status())
         except ValueError:
             self.steps_var.set("10")
+
+    def _enable_fine(self):
+        if self.stm.is_opened:
+            self.stm.enable_fine_motor_mode()
+    
 
 
 class App(tk.Tk):
@@ -234,11 +246,11 @@ class App(tk.Tk):
 
         # --- Place plots into the "Image" tab ---
         self.scan_dacz_frame = PlotFrame(image_tab_frame, with_toobar=True)
-        self.scan_dacz_frame.add_image(np.zeros((10, 10)), title="DAC Z Output")
+        self.scan_dacz_frame.add_image(np.zeros((10, 10)), title="DAC Z Output (Topography)")
         self.scan_dacz_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew') # row 0, col 0
         
         self.scan_adc_frame = PlotFrame(image_tab_frame, with_toobar=True)
-        self.scan_adc_frame.add_image(np.zeros((10, 10)), title="ADC Reading (Topography)")
+        self.scan_adc_frame.add_image(np.zeros((10, 10)), title="ADC Reading (Tunnelling Current)")
         self.scan_adc_frame.grid(row=0, column=1, padx=5, pady=5, sticky='nsew') # row 0, col 1
 
 
@@ -572,14 +584,17 @@ class App(tk.Tk):
     def _update_real_time(self):
         if not self.stm.busy:
             status = self.stm.get_status()
-            if self.stm.history:
+            if self.stm.history and len(self.stm.history) > 0:
                 self.status_label.config(text=status.to_string())
-                plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
-                plot_adc = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
-                plot_steps = [h.steps for h in self.stm.history]
-                self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_adc)
-                self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
-        self.after_id = self.after(200, self._update_real_time)
+                
+                # Only update plots if we have new data
+                if len(self.stm.history) > 1:
+                    plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
+                    plot_adc = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
+                    plot_steps = [h.steps for h in self.stm.history]
+                    self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_adc)
+                    self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
+        self.after_id = self.after(50, self._update_real_time)  # Faster update rate for better responsiveness
 
     def _update_images(self):
         if np.any(self.stm.scan_adc):

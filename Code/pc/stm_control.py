@@ -1,6 +1,7 @@
 import serial
 
 import numpy as np
+import threading
 from dataclasses import dataclass
 from collections import deque
 import time
@@ -74,7 +75,8 @@ class STM_Status:
             float: The corresponding current in Amperes.
         """
         return 1.0 * adc / 32768 * 10.24 / 100e6
-    def set_bias_scaling_factor(self, factor: float):
+    @staticmethod
+    def set_bias_scaling_factor(factor: float):
         STM_Status.bias_scaling_factor = factor
 
     @staticmethod
@@ -91,7 +93,8 @@ class STM_Status:
         base_voltage = 10.0
         return (base_voltage * STM_Status.bias_scaling_factor) * dac / 65535.0
 
-    def set_x_scaling_factor(self, factor: float):
+    @staticmethod
+    def set_x_scaling_factor(factor: float):
         STM_Status.x_scaling_factor = factor
 
     @staticmethod
@@ -108,7 +111,8 @@ class STM_Status:
         base_voltage = 5.0
         return (base_voltage * STM_Status.x_scaling_factor) * (dac - 32768) / 32768
 
-    def set_y_scaling_factor(self, factor: float):
+    @staticmethod
+    def set_y_scaling_factor(factor: float):
         STM_Status.y_scaling_factor = factor
 
     @staticmethod
@@ -125,7 +129,8 @@ class STM_Status:
         base_voltage = 5.0
         return (base_voltage * STM_Status.y_scaling_factor) * (dac - 32768) / 32768
 
-    def set_z_scaling_factor(self, factor: float):
+    @staticmethod
+    def set_z_scaling_factor(factor: float):
         STM_Status.z_scaling_factor = factor
 
     @staticmethod
@@ -188,14 +193,20 @@ class STM(object):
             self.open(device)
 
         self.status = STM_Status()
-        self.hist_length = 1000
+        self.hist_length = 200  # Reduced history length for better performance
         self.history = deque()
         self.scan_adc = None
         self.scan_dacz = None
+        self.last_steps = 0  # Track last step count for change detection
 
         self.scan_config = [0, 100, 10, 0, 100, 10]
         self.scan_adc = np.ones([512, 512], dtype=np.float32)
         self.scan_dacz = np.ones([512, 512], dtype=np.float32)
+        # Threaded status polling
+        self._status_lock = threading.Lock()
+        self._poll_thread = None
+        self._poll_stop = threading.Event()
+        self.STATUS_POLL_INTERVAL = 0.1  # seconds
 
     def open(self, device):
         """Opens the serial connection to the STM device.
@@ -206,6 +217,10 @@ class STM(object):
         self.stm_serial = serial.Serial(device, 115200, timeout=1)
         self.stm_serial.set_buffer_size(rx_size=128000, tx_size=128000)
         self.is_opened = True
+        # start background status poller
+        self._poll_stop.clear()
+        self._poll_thread = threading.Thread(target=self._status_polling_loop, daemon=True)
+        self._poll_thread.start()
 
     def get_status(self):
         """Requests and retrieves the current status from the STM.
@@ -215,35 +230,51 @@ class STM(object):
                         Returns the last known status if the device is busy or
                         if there is no response.
         """
-        if self.busy:
-            return
+        # Return cached status quickly. The background poller keeps it updated.
+        with self._status_lock:
+            return self.status
 
-        if self.is_opened:
+    def _status_polling_loop(self):
+        """Background loop: periodically request status when not busy.
+
+        Polling is suspended while self.busy is True (e.g., during scans) to avoid
+        interfering with scan data reads which use raw serial reads.
+        """
+        while not self._poll_stop.is_set():
+            if not self.is_opened:
+                time.sleep(self.STATUS_POLL_INTERVAL)
+                continue
+
+            # Do not poll while busy (scanning) to avoid stealing serial data
+            if self.busy:
+                time.sleep(self.STATUS_POLL_INTERVAL)
+                continue
+
             try:
+                # Request status
                 self.send_cmd('GSTS')
-                status_str = self.stm_serial.readline().decode()
-                if not status_str:
-                    # No response from STM, return last known status if available
-                    if self.history:
-                        return self.history[-1]
-                    return self.status
-                status_value = status_str.split(',')
-                status_value = [int(x) for x in status_value]
-                self.status = STM_Status.from_list(status_value)
-            except (ValueError, IndexError, serial.SerialException) as e:
-                print(f'Error parsing status or serial communication failed: {e}')
-                if self.history:
-                    return self.history[-1]
-                return self.status
-        else:
-            # Not connected, return default status
-            self.status = STM_Status()
+                # Read a single status line; timeout is configured on serial object
+                raw = self.stm_serial.readline().decode().strip()
+                if not raw:
+                    time.sleep(self.STATUS_POLL_INTERVAL)
+                    continue
+                parts = raw.split(',')
+                if len(parts) >= 11:
+                    vals = [int(x) for x in parts]
+                    s = STM_Status.from_list(vals)
+                    with self._status_lock:
+                        self.status = s
+                        # maintain history
+                        if not self.history or self.status.steps != self.last_steps or abs(self.status.adc - self.history[-1].adc) > 5:
+                            self.history.append(self.status)
+                            self.last_steps = self.status.steps
+                            if len(self.history) > self.hist_length:
+                                self.history.popleft()
+            except Exception:
+                # Ignore parse/read errors; keep polling
+                pass
 
-        self.history.append(self.status)
-        if len(self.history) > self.hist_length:
-            self.history.popleft()
-
-        return self.status
+            time.sleep(self.STATUS_POLL_INTERVAL)
 
     def reset(self):
         """Sends a reset command to the STM and clears the status history."""
@@ -270,6 +301,9 @@ class STM(object):
             steps (int): The number of steps to move the motor.
         """
         self.send_cmd(f'MTMV {steps}')
+        # Immediately update status after motor move for faster GUI response
+        time.sleep(0.01)  # Small delay to let motor command execute
+        self.get_status()
 
     def approach(self, target_dac, max_steps, step_interval, direction=1):
         """Initiates the tip approach procedure.
@@ -410,6 +444,12 @@ class STM(object):
         if self.is_opened:
             self.send_cmd('APRR')
             print("Approach recovery triggered")
+
+    def enable_fine_motor_mode(self):
+        """Enable fine motor mode on the device (single-step motor between Z sweeps)."""
+        if self.is_opened:
+            self.send_cmd('FINE')
+            print("Fine motor mode command sent")
 
     def start_scan(self, x_start, x_end, x_resolution, y_start, y_end, y_resolution, sample_number):
         """Starts a 2D scan and collects data.
