@@ -147,15 +147,15 @@ class ApproachAndMotorControl(ttk.Frame):
         ttk.Label(self, text="Fine Step Size:").grid(row=5, column=1, sticky='w')
         self.fine_step_var = tk.StringVar(value="10")
         fine_step_entry = ttk.Entry(self, textvariable=self.fine_step_var, width=10)
-        fine_step_entry.grid(row=6, column=2, sticky='ew', pady=2)
+        fine_step_entry.grid(row=5, column=2, sticky='ew', pady=2)
 
         ttk.Label(self, text="Sweep Range:").grid(row=6, column=1, sticky='w')
         self.sweep_range_var = tk.StringVar(value="2000")
         sweep_range_entry = ttk.Entry(self, textvariable=self.sweep_range_var, width=10)
-        sweep_range_entry.grid(row=7, column=2, sticky='ew', pady=2)
+        sweep_range_entry.grid(row=6, column=2, sticky='ew', pady=2)
 
         set_fine_params_button = ttk.Button(self, text="Set Fine Params", command=self._set_fine_params)
-        set_fine_params_button.grid(row=8, column=1, columnspan=2, sticky='ew', pady=(4,2))
+        set_fine_params_button.grid(row=7, column=1, columnspan=2, sticky='ew', pady=(4,2))
 
     def _start_approach(self):
         try:
