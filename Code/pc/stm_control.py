@@ -214,8 +214,15 @@ class STM(object):
         Args:
             device (str): The serial port device name (e.g., 'COM3' or '/dev/ttyUSB0').
         """
-        self.stm_serial = serial.Serial(device, 115200, timeout=1)
-        self.stm_serial.set_buffer_size(rx_size=128000, tx_size=128000)
+        # Match firmware baudrate (Teensy uses 230400 in current firmware)
+        self.stm_serial = serial.Serial(device, 230400, timeout=1)
+        # set_buffer_size may not be available on all pyserial implementations; guard it
+        try:
+            if hasattr(self.stm_serial, 'set_buffer_size'):
+                self.stm_serial.set_buffer_size(rx_size=128000, tx_size=128000)
+        except Exception:
+            # Non-fatal: continue without changing buffer sizes
+            pass
         self.is_opened = True
         # start background status poller
         self._poll_stop.clear()
@@ -448,8 +455,27 @@ class STM(object):
     def enable_fine_motor_mode(self):
         """Enable fine motor mode on the device (single-step motor between Z sweeps)."""
         if self.is_opened:
-            self.send_cmd('FINE')
+            # Send explicit enable (1)
+            self.send_cmd('FINE 1')
             print("Fine motor mode command sent")
+
+    def disable_fine_motor_mode(self):
+        """Disable fine motor mode (coarse mode)."""
+        if self.is_opened:
+            self.send_cmd('FINE 0')
+            print("Fine motor mode disabled")
+
+    def set_approach_fine_step_size(self, step_size: int):
+        """Set the piezo Z step size used in fine approach sweeps."""
+        if self.is_opened:
+            self.send_cmd(f'APFS {int(step_size)}')
+            print(f"Sent approach fine step size: {step_size}")
+
+    def set_approach_z_range(self, z_range: int):
+        """Set the Z sweep search range used for approach."""
+        if self.is_opened:
+            self.send_cmd(f'APRG {int(z_range)}')
+            print(f"Sent approach Z search range: {z_range}")
 
     def start_scan(self, x_start, x_end, x_resolution, y_start, y_end, y_resolution, sample_number):
         """Starts a 2D scan and collects data.

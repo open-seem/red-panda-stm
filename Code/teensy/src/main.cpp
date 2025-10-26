@@ -164,7 +164,30 @@ void serialCommand(String command, STM &stm)
     // Enable fine motor mode (single-step between Z sweeps)
     if (command == "FINE")
     {
-      stm.enable_fine_motor_mode();
+      // Optional parameter: 0=disable, 1=enable. If no param provided, enable.
+      int val = Serial.parseInt();
+      if (val == 0)
+      {
+        stm.set_fine_mode(false);
+      }
+      else
+      {
+        stm.set_fine_mode(true);
+      }
+    }
+
+    // Set approach fine step size (Z sweep interval)
+    if (command == "APFS")
+    {
+      int step = Serial.parseInt();
+      stm.set_approach_fine_step_size(step);
+    }
+
+    // Set approach Z search range
+    if (command == "APRG")
+    {
+      int range = Serial.parseInt();
+      stm.set_approach_z_search_range(range);
     }
 
     // Note: APST (stop approach) command removed; use STOP to halt operations.

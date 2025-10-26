@@ -377,6 +377,46 @@ public:
     }
 
     /**
+     * @brief Enable/disable fine motor mode.
+     * @param enable true to enable fine mode (single-step motor between Z sweeps), false to use coarse mode.
+     */
+    void set_fine_mode(bool enable)
+    {
+        fine_motor_mode = enable;
+        if (debug_level >= 1)
+        {
+            Serial.print("Fine motor mode ");
+            Serial.println(enable ? "ENABLED" : "DISABLED");
+        }
+    }
+
+    /**
+     * @brief Set the fine approach piezo step size (Z sweep interval).
+     */
+    void set_approach_fine_step_size(int step_size)
+    {
+        approach_fine_step_size = step_size;
+        if (debug_level >= 1)
+        {
+            Serial.print("Approach fine step size set to: ");
+            Serial.println(approach_fine_step_size);
+        }
+    }
+
+    /**
+     * @brief Set the default Z sweep search range used between attempts.
+     */
+    void set_approach_z_search_range(int range)
+    {
+        approach_z_range = range;
+        if (debug_level >= 1)
+        {
+            Serial.print("Approach Z search range set to: ");
+            Serial.println(approach_z_range);
+        }
+    }
+
+    /**
      * @brief Set runtime debug verbosity level.
      * @param level 0=errors only,1=important,2=verbose
      */
@@ -562,10 +602,14 @@ public:
                 {
                     // Use single-step motor increment for fine adjustment
                     motor_steps_to_take = 1;
+                    // use fine piezo step size for Z sweeps
+                    approach_z_step = approach_fine_step_size;
                 }
                 else
                 {
                     motor_steps_to_take = approach_config.step_interval;
+                    // keep configured (coarse) approach step
+                    // approach_z_step remains as configured in start_approach
                 }
                 approach_z_start = stm_status.dac_z; // Update start position
                 approach_z_current = approach_z_start;

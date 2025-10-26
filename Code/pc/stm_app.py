@@ -108,9 +108,12 @@ class ApproachAndMotorControl(ttk.Frame):
 
         stop_button = ttk.Button(button_frame, text="Stop", command=self.stm.stepper_stop)
         stop_button.grid(row=3, column=0, sticky='ew', pady=2)
-
+        # Fine/Coarse buttons
+        coarse_button = ttk.Button(button_frame, text="Coarse", command=self._disable_fine)
+        coarse_button.grid(row=4, column=0, sticky='ew', pady=2)
+        
         fine_button = ttk.Button(button_frame, text="Fine", command=self._enable_fine)
-        fine_button.grid(row=4, column=0, sticky='ew', pady=2)
+        fine_button.grid(row=5, column=0, sticky='ew', pady=2)
 
         # --- Labels and Entries ---
         ttk.Label(self, text="Target:").grid(row=0, column=1, sticky='w')
@@ -139,6 +142,20 @@ class ApproachAndMotorControl(ttk.Frame):
         info_label = ttk.Label(self, text="Forward: tip towards sample, Backward: tip away from sample", 
                               font=('TkDefaultFont', 8), foreground='gray')
         info_label.grid(row=4, column=1, columnspan=2, sticky='w', pady=(0, 5))
+
+        # --- Fine approach parameters ---
+        ttk.Label(self, text="Fine Step Size:").grid(row=5, column=1, sticky='w')
+        self.fine_step_var = tk.StringVar(value="10")
+        fine_step_entry = ttk.Entry(self, textvariable=self.fine_step_var, width=10)
+        fine_step_entry.grid(row=6, column=2, sticky='ew', pady=2)
+
+        ttk.Label(self, text="Sweep Range:").grid(row=6, column=1, sticky='w')
+        self.sweep_range_var = tk.StringVar(value="2000")
+        sweep_range_entry = ttk.Entry(self, textvariable=self.sweep_range_var, width=10)
+        sweep_range_entry.grid(row=7, column=2, sticky='ew', pady=2)
+
+        set_fine_params_button = ttk.Button(self, text="Set Fine Params", command=self._set_fine_params)
+        set_fine_params_button.grid(row=8, column=1, columnspan=2, sticky='ew', pady=(4,2))
 
     def _start_approach(self):
         try:
@@ -172,6 +189,22 @@ class ApproachAndMotorControl(ttk.Frame):
     def _enable_fine(self):
         if self.stm.is_opened:
             self.stm.enable_fine_motor_mode()
+
+    def _disable_fine(self):
+        if self.stm.is_opened:
+            self.stm.disable_fine_motor_mode()
+
+    def _set_fine_params(self):
+        try:
+            step = int(self.fine_step_var.get())
+            rng = int(self.sweep_range_var.get())
+            if self.stm.is_opened:
+                self.stm.set_approach_fine_step_size(step)
+                self.stm.set_approach_z_range(rng)
+                # enable fine mode automatically after setting params
+                self.stm.enable_fine_motor_mode()
+        except ValueError:
+            print("Invalid fine params")
     
 
 
