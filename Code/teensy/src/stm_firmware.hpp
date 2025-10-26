@@ -1019,16 +1019,39 @@ public:
 
 private:
      // DAC output mode register setting
-     static const uint16_t MODE_BIPOLAR_10V = 0b0000000000001010; // -10V to +10V
-     static const uint16_t MODE_BIPOLAR_5V  = 0b0000000000000101; // -5V to +5V
-     static const uint16_t MODE_3V = 0b0000000000000011 
+    // See AD5761 datasheet for details
+    //  static const uint16_t MODE_3V = 0b0000000000000000;
+    //  static const uint16_t MODE_10V = 0b0000000000000010;
+    //  static const uint16_t MODE_5V = 0b0000000000000001; // 0V to 5V range
+    //  static const uint16_t MODE_BIAS = 0b0000000000001000;
 
+    // static const uint16_t MODE_3V = 0b0000000000000000;
+    static const uint16_t MODE_10V = 0b0000000000000001; // 0V to 10V range
+    static const uint16_t MODE_5V = 0b0000000000000011; // 0V to 5V range
+    static const uint16_t MODE_pm3V = 0b0000000000000101; // -3V to 3V range
+    static const uint16_t MODE_pm10V = 0b0000000000000000; // -10V to 10V range
 
-     // DAC objects
-     AD5761 dac_x = AD5761(DAC_1, MODE_BIPOLAR_5V);
-     AD5761 dac_y = AD5761(DAC_2, MODE_BIPOLAR_5V);
-     AD5761 dac_z = AD5761(DAC_3, MODE_BIPOLAR_10V);
-     AD5761 dac_bias = AD5761(DAC_4, MODE_3V);
+    // static constant uint16_t MODE list
+    // 0b0000000000000 000 : -10V to +10V ------------
+    // 0b0000000000000 001 : 0V to +10V --------------
+    // 0b0000000000000 010 : -5V to +5V
+    // 0b0000000000000 011 : 0V to +5V ---------------
+    // 0b0000000000000 100 : -2.5V to +7.5V
+    // 0b0000000000000 101 : -3V to +3V ---------------
+    // 0b0000000000000 110 : 0V to 16V
+    // 0b0000000000000 111 : 0V to 20V
+
+    //  // DAC objects
+    //  AD5761 dac_x = AD5761(DAC_1, MODE_5V);
+    //  AD5761 dac_y = AD5761(DAC_2, MODE_5V);
+    //  AD5761 dac_z = AD5761(DAC_3, MODE_10V);
+    //  AD5761 dac_bias = AD5761(DAC_4, MODE_BIAS);
+
+    // DAC objects
+     AD5761 dac_x = AD5761(DAC_1, MODE_10V);
+     AD5761 dac_y = AD5761(DAC_2, MODE_5V);
+     AD5761 dac_z = AD5761(DAC_3, MODE_pm3V);
+     AD5761 dac_bias = AD5761(DAC_4, MODE_pm10V);
 
     // ADC settings
     LTC2326_16 ltc2326 = LTC2326_16(CS_ADC, CNV, BUSY);
