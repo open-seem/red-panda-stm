@@ -53,7 +53,7 @@ LTC2326_16 ltc2326 = LTC2326_16(CS_ADC, CNV, BUSY);
 #define IN2 34
 #define IN3 35
 #define IN4 36
-#define STEPS_PER_REVOLUTION 2048
+#define STEPS_PER_REVOLUTION 4096  // 28BYJ-48: 64 steps * 64 gear ratio = 4096 steps/revolution
 
 #define CMD_LENGTH 4
 
