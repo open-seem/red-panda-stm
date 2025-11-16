@@ -718,7 +718,7 @@ class App(tk.Tk):
         ttk.Button(fine_params_frame, text="Set", command=self._set_fine_step_size).grid(row=0, column=2)
         
         ttk.Label(fine_params_frame, text="Z Range:").grid(row=1, column=0, sticky='w', padx=(0, 5), pady=(5, 0))
-        self.z_range_var = tk.StringVar(value="2000")
+        self.z_range_var = tk.StringVar(value="20000")
         z_range_entry = ttk.Entry(fine_params_frame, textvariable=self.z_range_var, width=10)
         z_range_entry.grid(row=1, column=1, sticky='ew', padx=(0, 5), pady=(5, 0))
         z_range_entry.bind('<KeyRelease>', self._update_z_range_display)

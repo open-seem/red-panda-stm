@@ -129,7 +129,7 @@ class STM_Status:
         Returns:
             float: Displacement in nanometers (nm).
         """
-        PIEZO_COEFFICIENT_NM_PER_V = 1500.0  # 1500 nm/V typical for 15mm piezo disc
+        PIEZO_COEFFICIENT_NM_PER_V = 160.0  # 160 nm/V typical for 15mm piezo disc
         
         axis = axis.lower()
         
