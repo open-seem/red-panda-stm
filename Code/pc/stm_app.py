@@ -112,38 +112,28 @@ class PlotFrame(ttk.Frame):
 
 
 class CollapsibleSection(ttk.Frame):
-    """A collapsible section widget with modern styling."""
+    """A collapsible section widget with modern styling that adapts to system theme."""
     def __init__(self, parent, title, *args, **kwargs):
         super().__init__(parent, relief=tk.FLAT, borderwidth=0, *args, **kwargs)
         self.is_expanded = True
         
-        # Header frame with modern styling
-        self.header = tk.Frame(self, bg='#e8e8e8', relief=tk.RAISED, borderwidth=1, cursor='hand2')
+        # Use ttk widgets for automatic theme support
+        self.header = ttk.Frame(self, relief=tk.RAISED, borderwidth=1)
         self.header.pack(fill=tk.X, pady=(0, 1))
         self.header.bind('<Button-1>', self.toggle)
         
-        # Arrow indicator
-        self.arrow_label = tk.Label(self.header, text="▼", width=2, font=('Segoe UI', 10), 
-                                    bg='#e8e8e8', fg='#333333', cursor='hand2')
+        # Arrow indicator using ttk
+        self.arrow_label = ttk.Label(self.header, text="▼", width=2, font=('Segoe UI', 10), cursor='hand2')
         self.arrow_label.pack(side=tk.LEFT, padx=(8, 0))
         self.arrow_label.bind('<Button-1>', self.toggle)
         
-        # Title label
-        self.title_label = tk.Label(self.header, text=title, font=('Segoe UI', 10, 'bold'), 
-                                    bg='#e8e8e8', fg='#333333', cursor='hand2')
+        # Title label using ttk
+        self.title_label = ttk.Label(self.header, text=title, font=('Segoe UI', 10, 'bold'), cursor='hand2')
         self.title_label.pack(side=tk.LEFT, padx=8, pady=8)
         self.title_label.bind('<Button-1>', self.toggle)
         
-        # Hover effects
-        self.header.bind('<Enter>', lambda e: self.header.config(bg='#d8d8d8'))
-        self.header.bind('<Leave>', lambda e: self.header.config(bg='#e8e8e8'))
-        self.arrow_label.bind('<Enter>', lambda e: self.arrow_label.config(bg='#d8d8d8'))
-        self.arrow_label.bind('<Leave>', lambda e: self.arrow_label.config(bg='#e8e8e8'))
-        self.title_label.bind('<Enter>', lambda e: self.title_label.config(bg='#d8d8d8'))
-        self.title_label.bind('<Leave>', lambda e: self.title_label.config(bg='#e8e8e8'))
-        
-        # Content frame with card-like appearance
-        self.content = tk.Frame(self, bg='#ffffff', relief=tk.FLAT, borderwidth=1)
+        # Content frame using ttk for theme support
+        self.content = ttk.Frame(self, relief=tk.FLAT, borderwidth=1)
         self.content.pack(fill=tk.BOTH, expand=True, padx=1, pady=(0, 2))
         
     def toggle(self, event=None):
@@ -188,12 +178,6 @@ class ApproachAndMotorControl(ttk.Frame):
 
         stop_button = ttk.Button(button_frame, text="Stop", command=self.stm.stepper_stop)
         stop_button.grid(row=3, column=0, sticky='ew', pady=2)
-        # Fine/Coarse buttons
-        coarse_button = ttk.Button(button_frame, text="Coarse", command=self._disable_fine)
-        coarse_button.grid(row=4, column=0, sticky='ew', pady=2)
-        
-        fine_button = ttk.Button(button_frame, text="Fine", command=self._enable_fine)
-        fine_button.grid(row=5, column=0, sticky='ew', pady=2)
 
         # --- Labels and Entries ---
         ttk.Label(self, text="Target (ADC):").grid(row=0, column=1, sticky='w')
@@ -210,6 +194,11 @@ class ApproachAndMotorControl(ttk.Frame):
         self.max_steps_var = tk.StringVar(value="10000")
         max_steps_entry = ttk.Entry(self, textvariable=self.max_steps_var, width=10)
         max_steps_entry.grid(row=1, column=2, sticky='ew', pady=2)
+        max_steps_entry.bind('<KeyRelease>', self._update_max_steps_display)
+
+        # Display equivalent distance for max steps
+        self.max_steps_distance_label = ttk.Label(self, text="≈ 0.00 μm", font=('TkDefaultFont', 8), foreground='gray')
+        self.max_steps_distance_label.grid(row=1, column=3, sticky='w', padx=(5, 0))
 
         ttk.Label(self, text="Steps:").grid(row=2, column=1, sticky='w')
         self.steps_var = tk.StringVar(value="10")
@@ -228,28 +217,40 @@ class ApproachAndMotorControl(ttk.Frame):
                                      state="readonly", width=8)
         direction_combo.grid(row=3, column=2, sticky='ew', pady=2)
         
+        # Add Fine/Coarse mode controls with radio buttons
+        ttk.Label(self, text="Mode:").grid(row=4, column=1, sticky='w')
+        mode_frame = ttk.Frame(self)
+        mode_frame.grid(row=4, column=2, columnspan=2, sticky='ew', pady=2)
+        
+        self.mode_var = tk.StringVar(value="Coarse")
+        coarse_radio = ttk.Radiobutton(mode_frame, text="Coarse", variable=self.mode_var, 
+                                       value="Coarse", command=self._set_coarse_mode)
+        coarse_radio.pack(side=tk.LEFT, padx=(0, 10))
+        
+        fine_radio = ttk.Radiobutton(mode_frame, text="Fine", variable=self.mode_var, 
+                                     value="Fine", command=self._set_fine_mode)
+        fine_radio.pack(side=tk.LEFT)
+        
+        # Mode info label
+        mode_info = ttk.Label(self, text="Coarse: use motor steps | Fine: 1 motor step + piezo sweep", 
+                              font=('TkDefaultFont', 8), foreground='gray')
+        mode_info.grid(row=5, column=1, columnspan=3, sticky='w', pady=(0, 5))
+        
         # Add info label
         info_label = ttk.Label(self, text="Forward: tip towards sample, Backward: tip away from sample", 
                               font=('TkDefaultFont', 8), foreground='gray')
-        info_label.grid(row=4, column=1, columnspan=3, sticky='w', pady=(0, 5))
+        info_label.grid(row=6, column=1, columnspan=3, sticky='w', pady=(0, 5))
+        
+        # Add approach status indicator (for recovery mode, etc.)
+        self.approach_status_label = ttk.Label(self, text="", font=('TkDefaultFont', 9, 'bold'))
+        self.approach_status_label.grid(row=7, column=1, columnspan=3, sticky='w', pady=(5, 5))
         
         # Initialize displays
         self._update_target_display()
+        self._update_max_steps_display()
         self._update_steps_display()
 
-        # --- Fine approach parameters ---
-        ttk.Label(self, text="Fine Step Size:").grid(row=5, column=1, sticky='w')
-        self.fine_step_var = tk.StringVar(value="10")
-        fine_step_entry = ttk.Entry(self, textvariable=self.fine_step_var, width=10)
-        fine_step_entry.grid(row=5, column=2, sticky='ew', pady=2)
 
-        ttk.Label(self, text="Sweep Range:").grid(row=6, column=1, sticky='w')
-        self.sweep_range_var = tk.StringVar(value="20000")
-        sweep_range_entry = ttk.Entry(self, textvariable=self.sweep_range_var, width=10)
-        sweep_range_entry.grid(row=6, column=2, sticky='ew', pady=2)
-
-        set_fine_params_button = ttk.Button(self, text="Set Fine Params", command=self._set_fine_params)
-        set_fine_params_button.grid(row=7, column=1, columnspan=2, sticky='ew', pady=(4,2))
 
     def _update_target_display(self, event=None):
         """Update the current display when target ADC value changes."""
@@ -261,6 +262,19 @@ class ApproachAndMotorControl(ttk.Frame):
         except (ValueError, AttributeError):
             self.target_current_label.config(text="≈ --- nA")
     
+    def _update_max_steps_display(self, event=None):
+        """Update the distance display when max steps value changes."""
+        try:
+            steps = int(self.max_steps_var.get())
+            distance_um = stm_control.STM_Status.steps_to_distance(steps)
+            if abs(distance_um) >= 1000:
+                distance_mm = distance_um / 1000
+                self.max_steps_distance_label.config(text=f"≈ {distance_mm:.3f} mm")
+            else:
+                self.max_steps_distance_label.config(text=f"≈ {distance_um:.2f} μm")
+        except (ValueError, AttributeError):
+            self.max_steps_distance_label.config(text="≈ --- μm")
+
     def _update_steps_display(self, event=None):
         """Update the distance display when steps value changes."""
         try:
@@ -273,6 +287,18 @@ class ApproachAndMotorControl(ttk.Frame):
                 self.steps_distance_label.config(text=f"≈ {distance_um:.2f} μm")
         except (ValueError, AttributeError):
             self.steps_distance_label.config(text="≈ --- μm")
+    
+    def _set_coarse_mode(self):
+        """Set approach to coarse mode (use motor steps)."""
+        if self.stm.is_opened:
+            self.stm.disable_fine_motor_mode()
+            print("Approach mode: COARSE (motor steps)")
+    
+    def _set_fine_mode(self):
+        """Set approach to fine mode (1 motor step + piezo sweep)."""
+        if self.stm.is_opened:
+            self.stm.enable_fine_motor_mode()
+            print("Approach mode: FINE (1 motor step + piezo sweep)")
     
     def _start_approach(self):
         try:
@@ -310,27 +336,6 @@ class ApproachAndMotorControl(ttk.Frame):
         except ValueError:
             self.steps_var.set("10")
 
-    def _enable_fine(self):
-        if self.stm.is_opened:
-            self.stm.enable_fine_motor_mode()
-
-    def _disable_fine(self):
-        if self.stm.is_opened:
-            self.stm.disable_fine_motor_mode()
-
-    def _set_fine_params(self):
-        try:
-            step = int(self.fine_step_var.get())
-            rng = int(self.sweep_range_var.get())
-            if self.stm.is_opened:
-                self.stm.set_approach_fine_step_size(step)
-                self.stm.set_approach_z_range(rng)
-                # enable fine mode automatically after setting params
-                self.stm.enable_fine_motor_mode()
-        except ValueError:
-            print("Invalid fine params")
-    
-
 
 class App(tk.Tk):
     def __init__(self):
@@ -346,34 +351,32 @@ class App(tk.Tk):
 
         self.stm = stm_control.STM()
         
-        # Configure modern styles
+        # Configure modern styles that work with system theme
         self.style = ttk.Style(self)
         
-        # Blue button style for active operations
+        # Try to use native theme if available
+        try:
+            # On macOS, use 'aqua' theme which supports dark mode
+            available_themes = self.style.theme_names()
+            if 'aqua' in available_themes:
+                self.style.theme_use('aqua')
+            elif 'clam' in available_themes:
+                self.style.theme_use('clam')
+        except:
+            pass  # Use default theme
+        
+        # Blue button style for active operations (adapts to theme)
+        self.style.configure('Blue.TButton')
         self.style.map('Blue.TButton',
             background=[('active', '#00599c'), ('!disabled', '#0078d4')],
             foreground=[('active', 'white'), ('!disabled', 'white')]
         )
-        
-        # Modern flat style for frames
-        self.style.configure('Card.TFrame', 
-            background='#f5f5f5',
-            relief=tk.FLAT,
-            borderwidth=1
-        )
-        
-        # Header style for collapsible sections
-        self.style.configure('Header.TFrame',
-            background='#e8e8e8',
-            relief=tk.RAISED,
-            borderwidth=1
-        )
 
-        # Create status bar at the bottom
+        # Create status bar at the bottom with theme support
         self.status_bar = ttk.Frame(self, relief=tk.SUNKEN, borderwidth=1)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # Status bar sections
+        # Status bar sections - using ttk for theme support
         self.status_connection = ttk.Label(self.status_bar, text="⚫ Disconnected", 
                                           relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
         self.status_connection.pack(side=tk.LEFT, padx=2)
@@ -485,12 +488,25 @@ class App(tk.Tk):
                 super().__init__(parent, *args, **kwargs)
                 self.grid_columnconfigure(1, weight=1)
                 self.cmd_func, self.convert_func = cmd_func, convert_func
-                self.variable = tk.DoubleVar(value=default_value)
+                self.from_ = from_
+                self.to = to
+                
+                # Convert default_value to int if it's a string
+                if isinstance(default_value, str):
+                    default_value = int(default_value)
+                
+                # Shift the range to be 0-based to avoid ttk.Scale rendering issues with negative values
+                self.range_offset = -from_  # Offset to shift range to start at 0
+                self.shifted_default = default_value + self.range_offset
+                
+                # Use DoubleVar for smooth slider movement
+                self.variable = tk.DoubleVar(value=float(self.shifted_default))
 
                 self.label = ttk.Label(self, text=text, width=5)
                 self.label.grid(row=0, column=0, sticky=tk.W)
 
-                self.slider = ttk.Scale(self, from_=from_, to=to, orient=tk.HORIZONTAL, variable=self.variable, command=self._on_slider_change)
+                # Create slider with 0-based range (shifted)
+                self.slider = ttk.Scale(self, from_=0.0, to=float(to - from_), orient=tk.HORIZONTAL, variable=self.variable, command=self._on_slider_change)
                 self.slider.grid(row=0, column=1, sticky='ew', padx=5)
 
                 self.input_string_var = tk.StringVar(value=str(default_value))
@@ -506,24 +522,31 @@ class App(tk.Tk):
                 self._update_display(default_value)
 
             def _on_slider_change(self, value_str):
-                value = int(float(value_str))
-                self.input_string_var.set(str(value))
-                self._update_display(value)
-                self.cmd_func(value)
+                # Convert from shifted (0-based) value back to actual DAC value
+                shifted_value = int(float(value_str))
+                actual_value = shifted_value - self.range_offset
+                self.input_string_var.set(str(actual_value))
+                self._update_display(actual_value)
+                self.cmd_func(actual_value)
 
             def _on_entry_set(self, event=None):
                 try:
                     value = int(self.input_string_var.get())
-                    from_ = self.slider.cget('from')
-                    to = self.slider.cget('to')
-                    if value < from_: value = int(from_)
-                    if value > to: value = int(to)
-                    self.variable.set(value)
+                    # Clamp value to valid range
+                    if value < self.from_: 
+                        value = self.from_
+                    if value > self.to: 
+                        value = self.to
+                    # Convert to shifted value for slider
+                    shifted_value = value + self.range_offset
+                    self.variable.set(float(shifted_value))
                     self.input_string_var.set(str(value))
                     self._update_display(value)
                     self.cmd_func(value)
                 except (ValueError, TypeError):
-                    current_val = int(self.variable.get())
+                    # Get current shifted value and convert back to actual
+                    shifted_val = int(round(self.variable.get()))
+                    current_val = shifted_val - self.range_offset
                     self.input_string_var.set(str(current_val))
 
             def _update_display(self, value):
@@ -541,7 +564,7 @@ class App(tk.Tk):
                 self.get_scaling_func = get_scaling_func
                 self.grid_columnconfigure(1, weight=1)
 
-                self.slider_control = _DAC_Slider_Control(self, label, "32768", set_dac_func, dac_to_volts_func, from_=0, to=65535)
+                self.slider_control = _DAC_Slider_Control(self, label, 0, set_dac_func, dac_to_volts_func, from_=-32768, to=32767)
                 self.slider_control.pack(fill='x', expand=True)
 
                 scale_frame = ttk.Frame(self)
@@ -600,7 +623,8 @@ class App(tk.Tk):
                 params_frame = ttk.Frame(self)
                 params_frame.grid(row=0, column=1, sticky='ew')
                 for i in range(1, 4): params_frame.grid_columnconfigure(i, weight=1)
-                labels = ["Start", "End", "Interval"]; defaults = [["31768", "33768", "512"], ["31768", "33768", "512"]]
+                # Bipolar defaults: scan centered around 0 (±1000 DAC units ≈ ±230 nm)
+                labels = ["Start", "End", "Interval"]; defaults = [["-1000", "1000", "256"], ["-1000", "1000", "256"]]
                 ttk.Label(params_frame, text="X:").grid(row=1, column=0, sticky='e'); ttk.Label(params_frame, text="Y:").grid(row=2, column=0, sticky='e')
                 for i, label in enumerate(labels):
                     ttk.Label(params_frame, text=label).grid(row=0, column=i+1, sticky='w')
@@ -679,7 +703,41 @@ class App(tk.Tk):
         
         # ===== APPROACH & MOTOR SECTION =====
         approach_section = add_collapsible_section("🎯 Approach & Motor")
-        ApproachAndMotorControl(approach_section, stm_control=self.stm).pack(fill=tk.X, pady=5, padx=5)
+        self.approach_control = ApproachAndMotorControl(approach_section, stm_control=self.stm)
+        self.approach_control.pack(fill=tk.X, pady=5, padx=5)
+        
+        # Add Fine Approach Parameters
+        fine_params_frame = ttk.Frame(approach_section)
+        fine_params_frame.pack(fill=tk.X, pady=5, padx=5)
+        fine_params_frame.grid_columnconfigure(1, weight=1)
+        
+        ttk.Label(fine_params_frame, text="Fine Z Step:").grid(row=0, column=0, sticky='w', padx=(0, 5))
+        self.fine_step_var = tk.StringVar(value="10")
+        fine_step_entry = ttk.Entry(fine_params_frame, textvariable=self.fine_step_var, width=10)
+        fine_step_entry.grid(row=0, column=1, sticky='ew', padx=(0, 5))
+        ttk.Button(fine_params_frame, text="Set", command=self._set_fine_step_size).grid(row=0, column=2)
+        
+        ttk.Label(fine_params_frame, text="Z Range:").grid(row=1, column=0, sticky='w', padx=(0, 5), pady=(5, 0))
+        self.z_range_var = tk.StringVar(value="2000")
+        z_range_entry = ttk.Entry(fine_params_frame, textvariable=self.z_range_var, width=10)
+        z_range_entry.grid(row=1, column=1, sticky='ew', padx=(0, 5), pady=(5, 0))
+        z_range_entry.bind('<KeyRelease>', self._update_z_range_display)
+        ttk.Button(fine_params_frame, text="Set", command=self._set_z_range).grid(row=1, column=2, pady=(5, 0))
+        
+        # Display equivalent distance for Z range
+        self.z_range_distance_label = ttk.Label(fine_params_frame, text="≈ 0.00 nm", font=('TkDefaultFont', 8), foreground='gray')
+        self.z_range_distance_label.grid(row=1, column=3, sticky='w', padx=(5, 0), pady=(5, 0))
+        
+        # Initialize Z range display
+        self._update_z_range_display()
+        
+        # Info label for fine parameters
+        fine_info = ttk.Label(approach_section, text="Fine Z Step: piezo step size | Z Range: sweep search range", 
+                             font=('TkDefaultFont', 8), foreground='gray')
+        fine_info.pack(fill=tk.X, pady=(0, 5), padx=5)
+        
+        # Add Approach Debug button
+        ttk.Button(approach_section, text="Approach Debug", command=self._show_approach_debug).pack(fill=tk.X, pady=2, padx=5)
         
         # ===== SPECTROSCOPY SECTION =====
         spectroscopy_section = add_collapsible_section("📊 Spectroscopy")
@@ -693,8 +751,12 @@ class App(tk.Tk):
         
         _ButtonWithEntry(feedback_section, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, 
                         display_list=["Kp", "Ki", "Kd"]).pack(fill=tk.X, pady=2, padx=5)
-        _MultipleButtons(feedback_section, ["PID Debug", "Approach Debug"], 
-                        [self._show_pid_debug, self._show_approach_debug]).pack(fill=tk.X, pady=2, padx=5)
+        
+        # Separate buttons with clearer labels
+        ttk.Button(feedback_section, text="📊 Monitor PID (Real-time)", 
+                  command=self._show_pid_debug).pack(fill=tk.X, pady=2, padx=5)
+        ttk.Button(feedback_section, text="📖 PID Tuning Guide (Help)", 
+                  command=self._show_pid_tuning_guide).pack(fill=tk.X, pady=2, padx=5)
         const_current_frame = ttk.Frame(feedback_section)
         const_current_frame.pack(fill=tk.X, pady=5, padx=5)
         const_current_frame.grid_columnconfigure(1, weight=1)
@@ -795,17 +857,52 @@ class App(tk.Tk):
             "   - Start / End: The DAC values for the beginning and end of the bias voltage sweep.\n"
             "   - Steps: The number of data points to measure during the sweep.")
 
-        add_help_section("Feedback and Scanning",
-            "• Set PID: Sets the gains for the Z-axis feedback loop, which is essential for constant-current imaging.\n"
-            "   - Kp (Proportional): Responds to the current error.\n"
-            "   - Ki (Integral): Corrects long-term, steady-state errors.\n"
-            "   - Kd (Derivative): Dampens oscillations.\n\n"
-            "• ConstCurrent On: Engages the PID feedback loop to maintain a constant tunneling current by adjusting the Z-height.\n"
-            "   - Target ADC: The desired current (as a raw ADC value) for the feedback loop to maintain.\n\n"
+        add_help_section("PID Controller Tuning",
+            "The PID controller maintains constant tunneling current by adjusting Z-height.\n\n"
+            "📐 PID Equation:\n"
+            "   Output = Kp×error + Ki×∫error·dt + Kd×(d(error)/dt)\n\n"
+            "🎯 Parameter Functions:\n"
+            "• Kp (Proportional Gain):\n"
+            "   - Responds immediately to current error\n"
+            "   - Higher Kp → Faster response, but may overshoot\n"
+            "   - Too high → Oscillations and instability\n"
+            "   - Typical range: 0.0001 - 0.01\n\n"
+            "• Ki (Integral Gain):\n"
+            "   - Eliminates steady-state error over time\n"
+            "   - Accumulates error: ∫(setpoint - measured)dt\n"
+            "   - Higher Ki → Faster elimination of offset\n"
+            "   - Too high → Overshoot and slow oscillations\n"
+            "   - Typical range: 0.00001 - 0.001\n\n"
+            "• Kd (Derivative Gain):\n"
+            "   - Predicts future error based on rate of change\n"
+            "   - Dampens oscillations and improves stability\n"
+            "   - Higher Kd → More damping, slower response\n"
+            "   - Too high → Amplifies noise, sluggish response\n"
+            "   - Typical range: 0.0 - 0.0001\n\n"
+            "🔧 Tuning Strategy (Ziegler-Nichols Method):\n"
+            "1. Set Ki=0, Kd=0. Increase Kp until oscillation starts (Kp_critical)\n"
+            "2. Measure oscillation period T_critical\n"
+            "3. Calculate:\n"
+            "   Kp = 0.6 × Kp_critical\n"
+            "   Ki = 2 × Kp / T_critical\n"
+            "   Kd = Kp × T_critical / 8\n\n"
+            "💡 Quick Start Values:\n"
+            "   Kp = 0.0001, Ki = 0.0001, Kd = 0.0\n"
+            "   (Adjust based on system response)")
+
+        add_help_section("Constant Current & Scanning",
+            "• ConstCurrent On: Engages the PID feedback loop to maintain constant tunneling current.\n"
+            "   - Target ADC: The desired current (as a raw ADC value) for the feedback loop to maintain.\n"
+            "   - The system adjusts Z-height to keep current constant as tip scans over surface features.\n\n"
             "• Scan: Starts a raster scan of the surface. Requires constant current mode to be active.\n"
             "   - X/Y Start / End: Defines the corners of the scan area in DAC units.\n"
             "   - Interval: The step size in DAC units between pixels. Smaller values = higher resolution.\n"
-            "   - Samples: The number of ADC readings to average at each pixel to reduce noise.")
+            "   - Samples: The number of ADC readings to average at each pixel to reduce noise.\n\n"
+            "📊 Scan Tips:\n"
+            "   - Start with small scan areas (100×100 DAC units)\n"
+            "   - Use 10-20 samples per pixel for good signal-to-noise ratio\n"
+            "   - Ensure PID is well-tuned before scanning\n"
+            "   - Monitor current stability during scan")
 
         add_help_section("Data Saving",
             "• Save IV: Saves the most recently measured I-V curve to a .csv file.\n"
@@ -971,16 +1068,37 @@ class App(tk.Tk):
             direction = "Forward" if status.approach_direction == 1 else "Backward"
             if status.approach_recovery:
                 self.status_message.config(text=f"Recovering from overshoot - {direction}", foreground='orange')
+                # Update approach control status
+                if hasattr(self, 'approach_control'):
+                    self.approach_control.approach_status_label.config(
+                        text="⚠️ RECOVERY MODE - Retracting tip", 
+                        foreground='orange'
+                    )
             else:
                 self.status_message.config(text=f"Approaching tip - {direction}", foreground='blue')
+                # Update approach control status
+                if hasattr(self, 'approach_control'):
+                    self.approach_control.approach_status_label.config(
+                        text=f"▶️ Approaching ({direction})", 
+                        foreground='blue'
+                    )
         elif status.is_const_current:
             self.status_message.config(text="Maintaining constant current", foreground='green')
+            # Clear approach status
+            if hasattr(self, 'approach_control'):
+                self.approach_control.approach_status_label.config(text="")
         elif status.is_scanning:
             self.status_message.config(text="Scanning in progress...", foreground='purple')
+            # Clear approach status
+            if hasattr(self, 'approach_control'):
+                self.approach_control.approach_status_label.config(text="")
         elif self.stm.busy:
             self.status_message.config(text="Busy...", foreground='orange')
         else:
             self.status_message.config(text="Ready", foreground='black')
+            # Clear approach status
+            if hasattr(self, 'approach_control'):
+                self.approach_control.approach_status_label.config(text="")
     
     def _update_images(self):
         if np.any(self.stm.scan_adc):
@@ -1078,6 +1196,182 @@ class App(tk.Tk):
         text_widget.insert(tk.END, "• Start with small values and increase gradually\n")
         text_widget.config(state=tk.DISABLED)
 
+    def _show_pid_tuning_guide(self):
+        """Display comprehensive PID tuning guide."""
+        guide_win = tk.Toplevel(self)
+        guide_win.title("PID Tuning Guide for STM")
+        guide_win.geometry("700x800")
+        
+        # Create scrollable frame
+        outer_frame = ttk.Frame(guide_win)
+        outer_frame.pack(fill='both', expand=True)
+        outer_frame.grid_rowconfigure(0, weight=1)
+        outer_frame.grid_columnconfigure(0, weight=1)
+        
+        canvas = tk.Canvas(outer_frame)
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
+        scrollbar.grid(row=0, column=1, sticky='ns')
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        content_frame = ttk.Frame(canvas, padding=20)
+        canvas_frame_id = canvas.create_window((0, 0), window=content_frame, anchor="nw")
+        
+        def on_frame_cfg(e): canvas.configure(scrollregion=canvas.bbox("all"))
+        def on_canvas_cfg(e): canvas.itemconfig(canvas_frame_id, width=e.width)
+        content_frame.bind("<Configure>", on_frame_cfg)
+        canvas.bind("<Configure>", on_canvas_cfg)
+        
+        # Title using ttk
+        title = ttk.Label(content_frame, text="PID Controller Tuning Guide", 
+                        font=('Arial', 16, 'bold'))
+        title.pack(pady=(0, 20))
+        
+        # PID Equation using ttk
+        eq_frame = ttk.Frame(content_frame, relief=tk.RAISED, borderwidth=2)
+        eq_frame.pack(fill='x', pady=10)
+        ttk.Label(eq_frame, text="📐 PID Control Equation", font=('Arial', 12, 'bold')).pack(pady=5)
+        ttk.Label(eq_frame, text="Output(t) = Kp × e(t) + Ki × ∫e(τ)dτ + Kd × de(t)/dt", 
+                font=('Courier', 11)).pack(pady=5)
+        ttk.Label(eq_frame, text="where e(t) = Setpoint - Measured Value", 
+                font=('Arial', 9, 'italic')).pack(pady=(0, 5))
+        
+        # Parameter explanations using ttk for theme support
+        params = [
+            ("Kp - Proportional Gain",
+             "• Immediate response to current error\n"
+             "• Effect: Output = Kp × error\n"
+             "• ↑ Kp → Faster response, but may overshoot\n"
+             "• ↓ Kp → Slower, more stable response\n"
+             "• Too high → Oscillations and instability\n"
+             "• Typical: 0.0001 - 0.01"),
+            
+            ("Ki - Integral Gain",
+             "• Eliminates steady-state error over time\n"
+             "• Effect: Output += Ki × ∫error dt\n"
+             "• Accumulates past errors\n"
+             "• ↑ Ki → Faster error elimination\n"
+             "• ↓ Ki → Slower convergence to setpoint\n"
+             "• Too high → Overshoot, slow oscillations\n"
+             "• Typical: 0.00001 - 0.001"),
+            
+            ("Kd - Derivative Gain",
+             "• Predicts future error based on rate of change\n"
+             "• Effect: Output += Kd × (Δerror/Δt)\n"
+             "• Dampens oscillations\n"
+             "• ↑ Kd → More damping, reduced overshoot\n"
+             "• ↓ Kd → Less damping, faster response\n"
+             "• Too high → Amplifies noise, sluggish\n"
+             "• Typical: 0.0 - 0.0001 (often 0 for STM)")
+        ]
+        
+        for param_name, description in params:
+            param_frame = ttk.Frame(content_frame, relief=tk.SOLID, borderwidth=1)
+            param_frame.pack(fill='x', pady=8)
+            
+            header = ttk.Label(param_frame, text=param_name, font=('Arial', 11, 'bold'), 
+                            anchor='w', padding=(10, 5))
+            header.pack(fill='x')
+            
+            desc = ttk.Label(param_frame, text=description, font=('Arial', 10), 
+                          anchor='w', justify='left', padding=(15, 10))
+            desc.pack(fill='x')
+        
+        # Tuning methods using ttk
+        tuning_frame = ttk.Frame(content_frame, relief=tk.RAISED, borderwidth=2)
+        tuning_frame.pack(fill='x', pady=15)
+        
+        ttk.Label(tuning_frame, text="🔧 Tuning Methods", font=('Arial', 12, 'bold')).pack(pady=5)
+        
+        methods_text = """
+Method 1: Manual Tuning (Recommended for STM)
+1. Set Ki = 0, Kd = 0
+2. Increase Kp until system responds quickly but oscillates slightly
+3. Add small Ki (0.0001) to eliminate steady-state error
+4. Add small Kd (0.00001) if oscillations persist
+5. Fine-tune all three parameters
+
+Method 2: Ziegler-Nichols
+1. Set Ki = 0, Kd = 0
+2. Increase Kp until sustained oscillation (Kp_critical)
+3. Measure oscillation period T_critical (seconds)
+4. Calculate:
+   Kp = 0.6 × Kp_critical
+   Ki = 2 × Kp / T_critical  
+   Kd = Kp × T_critical / 8
+
+Quick Start Values for STM:
+   Kp = 0.0001
+   Ki = 0.0001
+   Kd = 0.0
+        """
+        
+        ttk.Label(tuning_frame, text=methods_text, font=('Arial', 9), 
+                anchor='w', justify='left', padding=(15, 10)).pack(fill='x')
+        
+        # Troubleshooting using ttk
+        trouble_frame = ttk.Frame(content_frame, relief=tk.RAISED, borderwidth=2)
+        trouble_frame.pack(fill='x', pady=10)
+        
+        ttk.Label(trouble_frame, text="⚠️ Troubleshooting", font=('Arial', 12, 'bold')).pack(pady=5)
+        
+        trouble_text = """
+Problem: System oscillates continuously
+→ Reduce Kp, reduce Ki, or increase Kd
+
+Problem: Slow response, doesn't reach setpoint
+→ Increase Kp, increase Ki
+
+Problem: Overshoots then settles
+→ Reduce Kp, increase Kd
+
+Problem: Steady-state error (doesn't reach target)
+→ Increase Ki
+
+Problem: Noisy, erratic behavior
+→ Reduce Kd, reduce Kp, increase filtering
+        """
+        
+        ttk.Label(trouble_frame, text=trouble_text, font=('Arial', 9), 
+                anchor='w', justify='left', padding=(15, 10)).pack(fill='x')
+        
+        # Close button
+        ttk.Button(content_frame, text="Close", command=guide_win.destroy).pack(pady=20)
+    
+    def _update_z_range_display(self, event=None):
+        """Update the distance display when Z range value changes."""
+        try:
+            z_range = int(self.z_range_var.get())
+            # Convert DAC value to piezo displacement in nanometers
+            displacement_nm = stm_control.STM_Status.dac_to_piezo_displacement(z_range, axis='z')
+            if abs(displacement_nm) >= 1000:
+                displacement_um = displacement_nm / 1000
+                self.z_range_distance_label.config(text=f"≈ {displacement_um:.2f} μm")
+            else:
+                self.z_range_distance_label.config(text=f"≈ {displacement_nm:.1f} nm")
+        except (ValueError, AttributeError):
+            self.z_range_distance_label.config(text="≈ --- nm")
+    
+    def _set_fine_step_size(self):
+        """Set the fine approach piezo Z step size."""
+        try:
+            step_size = int(self.fine_step_var.get())
+            if self.stm.is_opened:
+                self.stm.set_approach_fine_step_size(step_size)
+                print(f"Fine Z step size set to: {step_size}")
+        except ValueError:
+            print("Invalid fine step size value")
+    
+    def _set_z_range(self):
+        """Set the approach Z sweep search range."""
+        try:
+            z_range = int(self.z_range_var.get())
+            if self.stm.is_opened:
+                self.stm.set_approach_z_range(z_range)
+                print(f"Z search range set to: {z_range}")
+        except ValueError:
+            print("Invalid Z range value")
+    
     def _show_approach_debug(self):
         """Display approach debug information in a popup window."""
         debug_info = self.stm.get_approach_debug()

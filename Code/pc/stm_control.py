@@ -109,6 +109,85 @@ class STM_Status:
         # Convert to micrometers
         distance_um = distance_mm * 1000
         return distance_um
+    
+    @staticmethod
+    def dac_to_piezo_displacement(dac_value: int, axis: str = 'z'):
+        """Convert DAC value to piezo displacement in nanometers.
+        
+        Piezo: 15mm buzzer disc, 4-quadrant
+        Typical displacement coefficient: 1500 nm/V
+        
+        DAC Configuration:
+        - X axis: -5V to +5V (DAC -32768 to +32767, bipolar)
+        - Y axis: -5V to +5V (DAC -32768 to +32767, bipolar)
+        - Z axis: -3V to +3V (DAC -32768 to +32767, bipolar)
+        
+        Args:
+            dac_value (int): DAC value (-32768 to 32767 for all axes)
+            axis (str): 'x', 'y', or 'z'
+            
+        Returns:
+            float: Displacement in nanometers (nm).
+        """
+        PIEZO_COEFFICIENT_NM_PER_V = 1500.0  # 1500 nm/V typical for 15mm piezo disc
+        
+        axis = axis.lower()
+        
+        if axis == 'z':
+            # Z axis: -3V to +3V, bipolar, Two's complement
+            # DAC range: -32768 to +32767
+            voltage = (dac_value / 32768.0) * 3.0  # -3V to +3V
+        elif axis == 'x':
+            # X axis: -5V to +5V, bipolar, Two's complement (symmetric scanning)
+            # DAC range: -32768 to +32767
+            voltage = (dac_value / 32768.0) * 5.0  # -5V to +5V
+        elif axis == 'y':
+            # Y axis: -5V to +5V, bipolar, Two's complement (symmetric scanning)
+            # DAC range: -32768 to +32767
+            voltage = (dac_value / 32768.0) * 5.0  # -5V to +5V
+        else:
+            raise ValueError(f"Invalid axis: {axis}. Must be 'x', 'y', or 'z'")
+        
+        # Calculate displacement directly in nanometers
+        displacement_nm = voltage * PIEZO_COEFFICIENT_NM_PER_V
+        
+        return displacement_nm
+    
+    @staticmethod
+    def piezo_displacement_to_dac(displacement_nm: float, axis: str = 'z'):
+        """Convert piezo displacement in nanometers to DAC value.
+        
+        Args:
+            displacement_nm (float): Desired displacement in nanometers
+            axis (str): 'x', 'y', or 'z'
+            
+        Returns:
+            int: DAC value
+        """
+        PIEZO_COEFFICIENT_NM_PER_V = 1500.0
+        
+        axis = axis.lower()
+        voltage = displacement_nm / PIEZO_COEFFICIENT_NM_PER_V
+        
+        if axis == 'z':
+            # Z axis: -3V to +3V
+            if abs(voltage) > 3.0:
+                voltage = 3.0 if voltage > 0 else -3.0
+            dac_value = int((voltage / 3.0) * 32768)
+        elif axis == 'x':
+            # X axis: -5V to +5V (bipolar, symmetric)
+            if abs(voltage) > 5.0:
+                voltage = 5.0 if voltage > 0 else -5.0
+            dac_value = int((voltage / 5.0) * 32768)
+        elif axis == 'y':
+            # Y axis: -5V to +5V (bipolar, symmetric)
+            if abs(voltage) > 5.0:
+                voltage = 5.0 if voltage > 0 else -5.0
+            dac_value = int((voltage / 5.0) * 32768)
+        else:
+            raise ValueError(f"Invalid axis: {axis}")
+        
+        return dac_value
     @staticmethod
     def set_bias_scaling_factor(factor: float):
         STM_Status.bias_scaling_factor = factor
@@ -118,14 +197,14 @@ class STM_Status:
         """Convert a DAC value to the corresponding bias voltage using the scaling factor.
 
         Args:
-            dac (int): The DAC value to convert.
+            dac (int): The DAC value to convert (-32768 to 32767).
 
         Returns:
             float: The corresponding bias voltage.
         """
-        # Base range is 0-3V, multiplied by the scaling factor
+        # Base range is -10V to +10V (bipolar), multiplied by the scaling factor
         base_voltage = 10.0
-        return (base_voltage * STM_Status.bias_scaling_factor) * dac / 65535.0
+        return (base_voltage * STM_Status.bias_scaling_factor) * dac / 32768
 
     @staticmethod
     def set_x_scaling_factor(factor: float):
@@ -136,14 +215,14 @@ class STM_Status:
         """Convert a DAC value to the corresponding X-axis voltage using the scaling factor.
 
         Args:
-            dac (int): The DAC value to convert.
+            dac (int): The DAC value to convert (-32768 to 32767).
 
         Returns:
             float: The corresponding X-axis voltage.
         """
-        # Base range is 0-5V, multiplied by the scaling factor
+        # Base range is -5V to +5V (bipolar), multiplied by the scaling factor
         base_voltage = 5.0
-        return (base_voltage * STM_Status.x_scaling_factor) * (dac - 32768) / 32768
+        return (base_voltage * STM_Status.x_scaling_factor) * dac / 32768
 
     @staticmethod
     def set_y_scaling_factor(factor: float):
@@ -154,14 +233,14 @@ class STM_Status:
         """Convert a DAC value to the corresponding Y-axis voltage using the scaling factor.
 
         Args:
-            dac (int): The DAC value to convert.
+            dac (int): The DAC value to convert (-32768 to 32767).
 
         Returns:
             float: The corresponding Y-axis voltage.
         """
-        # Base range is 0-5V, multiplied by the scaling factor
+        # Base range is -5V to +5V (bipolar), multiplied by the scaling factor
         base_voltage = 5.0
-        return (base_voltage * STM_Status.y_scaling_factor) * (dac - 32768) / 32768
+        return (base_voltage * STM_Status.y_scaling_factor) * dac / 32768
 
     @staticmethod
     def set_z_scaling_factor(factor: float):
@@ -172,14 +251,14 @@ class STM_Status:
         """Convert a DAC value to the corresponding Z-axis voltage using the scaling factor.
 
         Args:
-            dac (int): The DAC value to convert.
+            dac (int): The DAC value to convert (-32768 to 32767).
 
         Returns:
             float: The corresponding Z-axis voltage.
         """
-        # Base range is 0-10V, multiplied by the scaling factor
-        base_voltage = 10.0
-        return (base_voltage * STM_Status.z_scaling_factor) * (dac - 32768) / 32768
+        # Base range is -3V to +3V (bipolar), multiplied by the scaling factor
+        base_voltage = 3.0
+        return (base_voltage * STM_Status.z_scaling_factor) * dac / 32768
     
     def to_string(self):
         """Return a formatted string representation of the STM status.

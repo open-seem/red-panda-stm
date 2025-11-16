@@ -1027,9 +1027,10 @@ private:
 
     // static const uint16_t MODE_3V = 0b0000000000000000;
     static const uint16_t MODE_10V = 0b0000000000000001; // 0V to 10V range
-    static const uint16_t MODE_5V = 0b0000000000000011; // 0V to 5V range
-    static const uint16_t MODE_pm3V = 0b0000000000000101; // -3V to 3V range
-    static const uint16_t MODE_pm10V = 0b0000000000000000; // -10V to 10V range
+    static const uint16_t MODE_5V = 0b0000000000000011; // 0V to 5V range (unipolar)
+    static const uint16_t MODE_pm5V = 0b0000000000000010; // -5V to +5V range (bipolar)
+    static const uint16_t MODE_pm3V = 0b0000000000000101; // -3V to +3V range (bipolar)
+    static const uint16_t MODE_pm10V = 0b0000000000000000; // -10V to +10V range (bipolar)
 
     // static constant uint16_t MODE list
     // 0b0000000000000 000 : -10V to +10V ------------
@@ -1048,10 +1049,11 @@ private:
     //  AD5761 dac_bias = AD5761(DAC_4, MODE_BIAS);
 
     // DAC objects
-     AD5761 dac_x = AD5761(DAC_1, MODE_10V);
-     AD5761 dac_y = AD5761(DAC_2, MODE_5V);
-     AD5761 dac_z = AD5761(DAC_3, MODE_pm3V);
-     AD5761 dac_bias = AD5761(DAC_4, MODE_pm10V);
+    // Note: Using bipolar ±5V for X/Y allows symmetric scanning around center point
+     AD5761 dac_x = AD5761(DAC_1, MODE_pm5V);   // -5V to +5V for symmetric X scanning
+     AD5761 dac_y = AD5761(DAC_2, MODE_pm5V);   // -5V to +5V for symmetric Y scanning
+     AD5761 dac_z = AD5761(DAC_3, MODE_pm3V);   // -3V to +3V for Z
+     AD5761 dac_bias = AD5761(DAC_4, MODE_pm10V); // -10V to +10V for bias
 
     // ADC settings
     LTC2326_16 ltc2326 = LTC2326_16(CS_ADC, CNV, BUSY);
