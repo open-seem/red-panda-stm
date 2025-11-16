@@ -619,24 +619,141 @@ class App(tk.Tk):
                 self.grid_columnconfigure(1, weight=1)
                 self.var_list = []
                 self.scan_button = ttk.Button(self, text="Scan", command=lambda: cmd_func(*[int(v.get()) for v in self.var_list]))
-                self.scan_button.grid(row=0, column=0, rowspan=4, padx=(0,5), sticky='ns')
+                self.scan_button.grid(row=0, column=0, rowspan=1, padx=(0,5), sticky='ns')
                 params_frame = ttk.Frame(self)
                 params_frame.grid(row=0, column=1, sticky='ew')
                 for i in range(1, 4): params_frame.grid_columnconfigure(i, weight=1)
-                # Bipolar defaults: scan centered around 0 (±1000 DAC units ≈ ±230 nm)
-                labels = ["Start", "End", "Interval"]; defaults = [["-1000", "1000", "256"], ["-1000", "1000", "256"]]
+                # Bipolar defaults: scan centered around 0 (±1000 DAC units with 160 nm/V)
+                labels = ["Start", "End", "Interval"]; defaults = [["-1000", "1000", "10"], ["-1000", "1000", "10"]]
                 ttk.Label(params_frame, text="X:").grid(row=1, column=0, sticky='e'); ttk.Label(params_frame, text="Y:").grid(row=2, column=0, sticky='e')
                 for i, label in enumerate(labels):
                     ttk.Label(params_frame, text=label).grid(row=0, column=i+1, sticky='w')
+                
+                # Store entry variables and create distance labels
+                self.x_vars = []
+                self.y_vars = []
+                self.x_distance_labels = []
+                self.y_distance_labels = []
+                
                 for r, row_defs in enumerate(defaults):
                     for c, val in enumerate(row_defs):
                         var = tk.StringVar(value=val)
-                        ttk.Entry(params_frame, textvariable=var).grid(row=r+1, column=c+1, sticky='ew', padx=1)
+                        entry = ttk.Entry(params_frame, textvariable=var, width=8)
+                        entry.grid(row=r+1, column=c+1, sticky='ew', padx=1)
                         self.var_list.append(var)
+                        
+                        # Store variables for distance calculation
+                        if r == 0:  # X row
+                            self.x_vars.append(var)
+                            # Add trace for all three columns (Start, End, Interval)
+                            var.trace_add('write', lambda *args: self._update_x_distance())
+                        else:  # Y row
+                            self.y_vars.append(var)
+                            # Add trace for all three columns (Start, End, Interval)
+                            var.trace_add('write', lambda *args: self._update_y_distance())
+                
+                # Add Samples row
                 ttk.Label(params_frame, text="Samples:").grid(row=3, column=1, sticky='e', pady=(5,0))
                 sample_var = tk.StringVar(value="10")
-                ttk.Entry(params_frame, textvariable=sample_var).grid(row=3, column=2, pady=(5,0), sticky='ew')
+                ttk.Entry(params_frame, textvariable=sample_var, width=8).grid(row=3, column=2, pady=(5,0), sticky='ew')
                 self.var_list.append(sample_var)
+                
+                # Add separator
+                ttk.Separator(params_frame, orient='horizontal').grid(row=4, column=0, columnspan=7, sticky='ew', pady=(10, 5))
+                
+                # Add scan information display section (below the parameters)
+                info_frame = ttk.Frame(params_frame)
+                info_frame.grid(row=5, column=0, columnspan=7, sticky='ew', pady=(5, 0))
+                info_frame.grid_columnconfigure(1, weight=1)
+                info_frame.grid_columnconfigure(3, weight=1)
+                
+                # X axis info
+                ttk.Label(info_frame, text="X:", font=('TkDefaultFont', 8, 'bold')).grid(row=0, column=0, sticky='w', padx=(0, 5))
+                self.x_range_label = ttk.Label(info_frame, text="", font=('TkDefaultFont', 8), foreground='gray')
+                self.x_range_label.grid(row=0, column=1, sticky='w', padx=(0, 10))
+                
+                self.x_pixel_label = ttk.Label(info_frame, text="", font=('TkDefaultFont', 8), foreground='gray')
+                self.x_pixel_label.grid(row=0, column=2, sticky='w')
+                
+                # Y axis info
+                ttk.Label(info_frame, text="Y:", font=('TkDefaultFont', 8, 'bold')).grid(row=1, column=0, sticky='w', padx=(0, 5), pady=(3, 0))
+                self.y_range_label = ttk.Label(info_frame, text="", font=('TkDefaultFont', 8), foreground='gray')
+                self.y_range_label.grid(row=1, column=1, sticky='w', padx=(0, 10), pady=(3, 0))
+                
+                self.y_pixel_label = ttk.Label(info_frame, text="", font=('TkDefaultFont', 8), foreground='gray')
+                self.y_pixel_label.grid(row=1, column=2, sticky='w', pady=(3, 0))
+                
+                # Initialize distance displays
+                self._update_x_distance()
+                self._update_y_distance()
+            
+            def _update_x_distance(self):
+                """Update X axis distance and pixel size displays."""
+                try:
+                    start = int(self.x_vars[0].get())
+                    end = int(self.x_vars[1].get())
+                    interval = int(self.x_vars[2].get())
+                    scan_range = abs(end - start)
+                    
+                    # Calculate scan range in nm
+                    range_nm = stm_control.STM_Status.dac_to_piezo_displacement(scan_range, axis='x')
+                    
+                    if range_nm >= 1000:
+                        self.x_range_label.config(text=f"Range: {range_nm/1000:.2f} μm")
+                    else:
+                        self.x_range_label.config(text=f"Range: {range_nm:.1f} nm")
+                    
+                    # Calculate pixel size (step size)
+                    if interval > 0:
+                        pixel_nm = stm_control.STM_Status.dac_to_piezo_displacement(interval, axis='x')
+                        num_pixels = scan_range // interval
+                        
+                        if pixel_nm >= 1.0:
+                            self.x_pixel_label.config(text=f"({num_pixels}px @ {pixel_nm:.2f} nm/px)")
+                        else:
+                            # Show in pm (picometers) for very small pixels
+                            self.x_pixel_label.config(text=f"({num_pixels}px @ {pixel_nm*1000:.1f} pm/px)")
+                    else:
+                        self.x_pixel_label.config(text="")
+                        
+                except (ValueError, AttributeError, ZeroDivisionError):
+                    self.x_range_label.config(text="")
+                    self.x_pixel_label.config(text="")
+            
+            def _update_y_distance(self):
+                """Update Y axis distance and pixel size displays."""
+                try:
+                    start = int(self.y_vars[0].get())
+                    end = int(self.y_vars[1].get())
+                    interval = int(self.y_vars[2].get())
+                    scan_range = abs(end - start)
+                    
+                    # Calculate scan range in nm
+                    range_nm = stm_control.STM_Status.dac_to_piezo_displacement(scan_range, axis='y')
+                    
+                    if range_nm >= 1000:
+                        self.y_range_label.config(text=f"Range: {range_nm/1000:.2f} μm")
+                    else:
+                        self.y_range_label.config(text=f"Range: {range_nm:.1f} nm")
+                    
+                    # Calculate pixel size (step size)
+                    if interval > 0:
+                        pixel_nm = stm_control.STM_Status.dac_to_piezo_displacement(interval, axis='y')
+                        num_pixels = scan_range // interval
+                        
+                        if pixel_nm >= 1.0:
+                            self.y_pixel_label.config(text=f"({num_pixels}px @ {pixel_nm:.2f} nm/px)")
+                        else:
+                            # Show in pm (picometers) for very small pixels
+                            self.y_pixel_label.config(text=f"({num_pixels}px @ {pixel_nm*1000:.1f} pm/px)")
+                    else:
+                        self.y_pixel_label.config(text="")
+                        
+                except (ValueError, AttributeError, ZeroDivisionError):
+                    self.y_range_label.config(text="")
+                    self.y_pixel_label.config(text="")
+                except (ValueError, AttributeError):
+                    self.y_range_label.config(text="")
         
         def add_control_widget(widget_class, *args, **kwargs):
             nonlocal row_number

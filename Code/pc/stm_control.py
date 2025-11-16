@@ -115,12 +115,12 @@ class STM_Status:
         """Convert DAC value to piezo displacement in nanometers.
         
         Piezo: 15mm buzzer disc, 4-quadrant
-        Typical displacement coefficient: 1500 nm/V
+        Measured displacement coefficient: 160 nm/V (all axes)
         
         DAC Configuration:
-        - X axis: -5V to +5V (DAC -32768 to +32767, bipolar)
-        - Y axis: -5V to +5V (DAC -32768 to +32767, bipolar)
-        - Z axis: -3V to +3V (DAC -32768 to +32767, bipolar)
+        - X axis: -5V to +5V (DAC -32768 to +32767, bipolar) → ±800 nm range
+        - Y axis: -5V to +5V (DAC -32768 to +32767, bipolar) → ±800 nm range
+        - Z axis: -3V to +3V (DAC -32768 to +32767, bipolar) → ±480 nm range
         
         Args:
             dac_value (int): DAC value (-32768 to 32767 for all axes)
@@ -164,23 +164,23 @@ class STM_Status:
         Returns:
             int: DAC value
         """
-        PIEZO_COEFFICIENT_NM_PER_V = 1500.0
+        PIEZO_COEFFICIENT_NM_PER_V = 160.0  # 160 nm/V for all axes
         
         axis = axis.lower()
         voltage = displacement_nm / PIEZO_COEFFICIENT_NM_PER_V
         
         if axis == 'z':
-            # Z axis: -3V to +3V
+            # Z axis: -3V to +3V (±480 nm range)
             if abs(voltage) > 3.0:
                 voltage = 3.0 if voltage > 0 else -3.0
             dac_value = int((voltage / 3.0) * 32768)
         elif axis == 'x':
-            # X axis: -5V to +5V (bipolar, symmetric)
+            # X axis: -5V to +5V (±800 nm range)
             if abs(voltage) > 5.0:
                 voltage = 5.0 if voltage > 0 else -5.0
             dac_value = int((voltage / 5.0) * 32768)
         elif axis == 'y':
-            # Y axis: -5V to +5V (bipolar, symmetric)
+            # Y axis: -5V to +5V (±800 nm range)
             if abs(voltage) > 5.0:
                 voltage = 5.0 if voltage > 0 else -5.0
             dac_value = int((voltage / 5.0) * 32768)
