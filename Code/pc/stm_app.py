@@ -104,6 +104,56 @@ class PlotFrame(ttk.Frame):
         self.figure.savefig(image_path)
 
 
+class CollapsibleSection(ttk.Frame):
+    """A collapsible section widget with modern styling."""
+    def __init__(self, parent, title, *args, **kwargs):
+        super().__init__(parent, relief=tk.FLAT, borderwidth=0, *args, **kwargs)
+        self.is_expanded = True
+        
+        # Header frame with modern styling
+        self.header = tk.Frame(self, bg='#e8e8e8', relief=tk.RAISED, borderwidth=1, cursor='hand2')
+        self.header.pack(fill=tk.X, pady=(0, 1))
+        self.header.bind('<Button-1>', self.toggle)
+        
+        # Arrow indicator
+        self.arrow_label = tk.Label(self.header, text="▼", width=2, font=('Segoe UI', 10), 
+                                    bg='#e8e8e8', fg='#333333', cursor='hand2')
+        self.arrow_label.pack(side=tk.LEFT, padx=(8, 0))
+        self.arrow_label.bind('<Button-1>', self.toggle)
+        
+        # Title label
+        self.title_label = tk.Label(self.header, text=title, font=('Segoe UI', 10, 'bold'), 
+                                    bg='#e8e8e8', fg='#333333', cursor='hand2')
+        self.title_label.pack(side=tk.LEFT, padx=8, pady=8)
+        self.title_label.bind('<Button-1>', self.toggle)
+        
+        # Hover effects
+        self.header.bind('<Enter>', lambda e: self.header.config(bg='#d8d8d8'))
+        self.header.bind('<Leave>', lambda e: self.header.config(bg='#e8e8e8'))
+        self.arrow_label.bind('<Enter>', lambda e: self.arrow_label.config(bg='#d8d8d8'))
+        self.arrow_label.bind('<Leave>', lambda e: self.arrow_label.config(bg='#e8e8e8'))
+        self.title_label.bind('<Enter>', lambda e: self.title_label.config(bg='#d8d8d8'))
+        self.title_label.bind('<Leave>', lambda e: self.title_label.config(bg='#e8e8e8'))
+        
+        # Content frame with card-like appearance
+        self.content = tk.Frame(self, bg='#ffffff', relief=tk.FLAT, borderwidth=1)
+        self.content.pack(fill=tk.BOTH, expand=True, padx=1, pady=(0, 2))
+        
+    def toggle(self, event=None):
+        """Toggle the section expanded/collapsed state."""
+        if self.is_expanded:
+            self.content.pack_forget()
+            self.arrow_label.config(text="▶")
+            self.is_expanded = False
+        else:
+            self.content.pack(fill=tk.BOTH, expand=True, padx=1, pady=(0, 2))
+            self.arrow_label.config(text="▼")
+            self.is_expanded = True
+    
+    def get_content_frame(self):
+        """Get the content frame to add widgets to."""
+        return self.content
+
 class ApproachAndMotorControl(ttk.Frame):
     def __init__(self, parent, stm_control, *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
@@ -265,11 +315,62 @@ class App(tk.Tk):
         self.is_const_current_on = False
 
         self.stm = stm_control.STM()
+        
+        # Configure modern styles
         self.style = ttk.Style(self)
+        
+        # Blue button style for active operations
         self.style.map('Blue.TButton',
             background=[('active', '#00599c'), ('!disabled', '#0078d4')],
             foreground=[('active', 'white'), ('!disabled', 'white')]
         )
+        
+        # Modern flat style for frames
+        self.style.configure('Card.TFrame', 
+            background='#f5f5f5',
+            relief=tk.FLAT,
+            borderwidth=1
+        )
+        
+        # Header style for collapsible sections
+        self.style.configure('Header.TFrame',
+            background='#e8e8e8',
+            relief=tk.RAISED,
+            borderwidth=1
+        )
+
+        # Create status bar at the bottom
+        self.status_bar = ttk.Frame(self, relief=tk.SUNKEN, borderwidth=1)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # Status bar sections
+        self.status_connection = ttk.Label(self.status_bar, text="⚫ Disconnected", 
+                                          relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
+        self.status_connection.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Separator(self.status_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        
+        self.status_mode = ttk.Label(self.status_bar, text="Mode: Idle", 
+                                    relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
+        self.status_mode.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Separator(self.status_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        
+        self.status_current = ttk.Label(self.status_bar, text="Current: --- nA", 
+                                       relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
+        self.status_current.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Separator(self.status_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        
+        self.status_position = ttk.Label(self.status_bar, text="Steps: 0", 
+                                        relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
+        self.status_position.pack(side=tk.LEFT, padx=2)
+        
+        ttk.Separator(self.status_bar, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=2)
+        
+        self.status_message = ttk.Label(self.status_bar, text="Ready", 
+                                       relief=tk.FLAT, anchor=tk.W, padding=(5, 2))
+        self.status_message.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
 
         main_pane = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_pane.pack(fill=tk.BOTH, expand=True)
@@ -340,6 +441,14 @@ class App(tk.Tk):
     def setup_control_widgets(self):
         self.control_frames.grid_columnconfigure(0, weight=1)
         row_number = 0
+        
+        def add_collapsible_section(title):
+            """Add a collapsible section and return its content frame."""
+            nonlocal row_number
+            section = CollapsibleSection(self.control_frames, title)
+            section.grid(row=row_number, column=0, sticky='ew', pady=2)
+            row_number += 1
+            return section.get_content_frame()
 
         class _DAC_Slider_Control(ttk.Frame):
             def __init__(self, parent, text, default_value, cmd_func, convert_func, from_, to, *args, **kwargs):
@@ -487,13 +596,14 @@ class App(tk.Tk):
             ttk.Separator(self.control_frames, orient='horizontal').grid(row=row_number, column=0, sticky='ew', pady=5)
             row_number += 1
 
-        # --- Connection Control ---
-        connection_frame = ttk.Frame(self.control_frames)
-        connection_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
-        connection_frame.grid_columnconfigure(1, weight=1) # Let the combobox expand
-        row_number += 1
+        # ===== CONNECTION SECTION =====
+        connection_section = add_collapsible_section("🔌 Connection")
+        
+        connection_frame = ttk.Frame(connection_section)
+        connection_frame.pack(fill=tk.X, pady=5, padx=5)
+        connection_frame.grid_columnconfigure(1, weight=1)
 
-        open_button = ttk.Button(connection_frame, text="Open", command=lambda: self.stm.open(self.port_var.get()))
+        open_button = ttk.Button(connection_frame, text="Open", command=self._open_connection)
         open_button.grid(row=0, column=0, sticky='w', padx=(0,5))
 
         ports = [port.device for port in serial.tools.list_ports.comports()]
@@ -509,25 +619,56 @@ class App(tk.Tk):
 
         refresh_button = ttk.Button(connection_frame, text="↻", command=refresh_ports, width=3)
         refresh_button.grid(row=0, column=2, sticky='e', padx=(5,0))
-        # --- NEW: Added "Help" button ---
-        add_control_widget(_MultipleButtons, ["STOP", "Reset", "Clear", "Help"],
-                           [self.stm.stop, self.stm.reset, self.stm.clear, self.show_help_window])
-        add_separator()
-        add_control_widget(_DACControlWithScaling, label="Bias", stm=self.stm, set_dac_func=self.stm.set_bias, dac_to_volts_func=stm_control.STM_Status.dac_to_bias_volts, set_scaling_func=stm_control.STM_Status.set_bias_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.bias_scaling_factor)
-        add_control_widget(_DACControlWithScaling, label="DACZ", stm=self.stm, set_dac_func=self.stm.set_dacz, dac_to_volts_func=stm_control.STM_Status.dac_to_dacz_volts, set_scaling_func=stm_control.STM_Status.set_z_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.z_scaling_factor)
-        add_control_widget(_DACControlWithScaling, label="DACX", stm=self.stm, set_dac_func=self.stm.set_dacx, dac_to_volts_func=stm_control.STM_Status.dac_to_dacx_volts, set_scaling_func=stm_control.STM_Status.set_x_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.x_scaling_factor)
-        add_control_widget(_DACControlWithScaling, label="DACY", stm=self.stm, set_dac_func=self.stm.set_dacy, dac_to_volts_func=stm_control.STM_Status.dac_to_dacy_volts, set_scaling_func=stm_control.STM_Status.set_y_scaling_factor, get_scaling_func=lambda: stm_control.STM_Status.y_scaling_factor)
-        add_separator()
-        add_control_widget(ApproachAndMotorControl, stm_control=self.stm)
-        add_separator()
-        add_control_widget(_ButtonWithEntry, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, display_list=["Start", "End", "Steps"])
-        add_control_widget(_ButtonWithEntry, "Save IV", ["./data/iv_curve_"], self._save_iv_curve)
-        add_separator()
-        add_control_widget(_ButtonWithEntry, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, display_list=["Kp", "Ki", "Kd"])
-        add_control_widget(_MultipleButtons, ["PID Debug", "Approach Debug"], [self._show_pid_debug, self._show_approach_debug])
-        const_current_frame = ttk.Frame(self.control_frames)
-        const_current_frame.grid(row=row_number, column=0, pady=2, sticky='ew')
+        
+        control_buttons = _MultipleButtons(connection_section, ["STOP", "Reset", "Clear", "Help"],
+                           [self._stop_operation, self._reset_stm, self._clear_data, self.show_help_window])
+        control_buttons.pack(fill=tk.X, pady=5, padx=5)
+        
+        # ===== DAC CONTROLS SECTION =====
+        dac_section = add_collapsible_section("⚡ DAC Controls")
+        
+        _DACControlWithScaling(dac_section, label="Bias", stm=self.stm, set_dac_func=self.stm.set_bias, 
+                              dac_to_volts_func=stm_control.STM_Status.dac_to_bias_volts, 
+                              set_scaling_func=stm_control.STM_Status.set_bias_scaling_factor, 
+                              get_scaling_func=lambda: stm_control.STM_Status.bias_scaling_factor).pack(fill=tk.X, pady=2, padx=5)
+        
+        _DACControlWithScaling(dac_section, label="DACZ", stm=self.stm, set_dac_func=self.stm.set_dacz, 
+                              dac_to_volts_func=stm_control.STM_Status.dac_to_dacz_volts, 
+                              set_scaling_func=stm_control.STM_Status.set_z_scaling_factor, 
+                              get_scaling_func=lambda: stm_control.STM_Status.z_scaling_factor).pack(fill=tk.X, pady=2, padx=5)
+        
+        _DACControlWithScaling(dac_section, label="DACX", stm=self.stm, set_dac_func=self.stm.set_dacx, 
+                              dac_to_volts_func=stm_control.STM_Status.dac_to_dacx_volts, 
+                              set_scaling_func=stm_control.STM_Status.set_x_scaling_factor, 
+                              get_scaling_func=lambda: stm_control.STM_Status.x_scaling_factor).pack(fill=tk.X, pady=2, padx=5)
+        
+        _DACControlWithScaling(dac_section, label="DACY", stm=self.stm, set_dac_func=self.stm.set_dacy, 
+                              dac_to_volts_func=stm_control.STM_Status.dac_to_dacy_volts, 
+                              set_scaling_func=stm_control.STM_Status.set_y_scaling_factor, 
+                              get_scaling_func=lambda: stm_control.STM_Status.y_scaling_factor).pack(fill=tk.X, pady=2, padx=5)
+        
+        # ===== APPROACH & MOTOR SECTION =====
+        approach_section = add_collapsible_section("🎯 Approach & Motor")
+        ApproachAndMotorControl(approach_section, stm_control=self.stm).pack(fill=tk.X, pady=5, padx=5)
+        
+        # ===== SPECTROSCOPY SECTION =====
+        spectroscopy_section = add_collapsible_section("📊 Spectroscopy")
+        
+        _ButtonWithEntry(spectroscopy_section, "Plot IV", ["0", "65535", "100"], self._plot_iv_curve, 
+                        display_list=["Start", "End", "Steps"]).pack(fill=tk.X, pady=2, padx=5)
+        _ButtonWithEntry(spectroscopy_section, "Save IV", ["./data/iv_curve_"], self._save_iv_curve).pack(fill=tk.X, pady=2, padx=5)
+        
+        # ===== FEEDBACK CONTROL SECTION =====
+        feedback_section = add_collapsible_section("🔄 Feedback Control")
+        
+        _ButtonWithEntry(feedback_section, "Set PID", ["0.0001", "0.0001", "0.0"], self.stm.set_pid, 
+                        display_list=["Kp", "Ki", "Kd"]).pack(fill=tk.X, pady=2, padx=5)
+        _MultipleButtons(feedback_section, ["PID Debug", "Approach Debug"], 
+                        [self._show_pid_debug, self._show_approach_debug]).pack(fill=tk.X, pady=2, padx=5)
+        const_current_frame = ttk.Frame(feedback_section)
+        const_current_frame.pack(fill=tk.X, pady=5, padx=5)
         const_current_frame.grid_columnconfigure(1, weight=1)
+        
         self.const_current_button = ttk.Button(const_current_frame, text="ConstCurrent On", command=self.toggle_const_current)
         self.const_current_button.grid(row=0, column=0, sticky='w', padx=(0,5))
         
@@ -547,17 +688,20 @@ class App(tk.Tk):
         # Initialize display
         self._update_cc_target_display()
         
-        row_number += 1
+        # ===== SCANNING SECTION =====
+        scanning_section = add_collapsible_section("🔍 Scanning")
         
-        add_separator()
-
-        scan_control_widget = add_control_widget(_ScanControl, self.start_scan_thread)
+        scan_control_widget = _ScanControl(scanning_section, self.start_scan_thread)
+        scan_control_widget.pack(fill=tk.X, pady=5, padx=5)
         self.scan_button = scan_control_widget.scan_button
-        add_control_widget(_ButtonWithEntry, "Save Scan", ["./data/image"], self._save_scan_image)
-        add_separator()
         
-        self.status_label = ttk.Label(self.control_frames, text="No Updates", relief=tk.RAISED, anchor='w', wraplength=380)
-        self.status_label.grid(row=row_number, column=0, sticky='ew', pady=(10,0))
+        _ButtonWithEntry(scanning_section, "Save Scan", ["./data/image"], self._save_scan_image).pack(fill=tk.X, pady=2, padx=5)
+        
+        # ===== STATUS DISPLAY SECTION =====
+        status_section = add_collapsible_section("📋 Status")
+        
+        self.status_label = ttk.Label(status_section, text="No Updates", relief=tk.RAISED, anchor='w', wraplength=380)
+        self.status_label.pack(fill=tk.X, pady=5, padx=5)
 
 
     def show_help_window(self):
@@ -647,12 +791,30 @@ class App(tk.Tk):
         except (ValueError, AttributeError):
             self.cc_target_current_label.config(text="≈ --- nA")
     
+    def _open_connection(self):
+        """Open serial connection and update status bar."""
+        try:
+            port = self.port_var.get()
+            if port:
+                self.stm.open(port)
+                self.status_connection.config(text="🟢 Connected", foreground='green')
+                self.status_message.config(text=f"Connected to {port}", foreground='green')
+                print(f"Connected to {port}")
+            else:
+                self.status_message.config(text="No port selected", foreground='red')
+                print("Error: No port selected")
+        except Exception as e:
+            self.status_connection.config(text="⚫ Connection Failed", foreground='red')
+            self.status_message.config(text=f"Connection failed: {str(e)}", foreground='red')
+            print(f"Connection error: {e}")
+    
     def toggle_const_current(self):
         # ... (implementation unchanged)
         if self.is_const_current_on:
             self.stm.turn_off_const_current()
             self.const_current_button.configure(style='TButton')
             self.is_const_current_on = False
+            self.status_message.config(text="Constant current OFF", foreground='black')
         else:
             try:
                 target_adc = int(self.const_current_target_var.get())
@@ -662,11 +824,14 @@ class App(tk.Tk):
                 current_amps = stm_control.STM_Status.adc_to_amp(target_adc)
                 current_nanoamps = current_amps * 1e9
                 print(f"Constant current ON - Target: {target_adc} ADC (≈ {current_nanoamps:.2f} nA)")
+                self.status_message.config(text=f"Constant current ON - Target: {current_nanoamps:.2f} nA", foreground='green')
             except (ValueError, TypeError) as e:
                 print(f"Invalid ADC target value for constant current: {e}")
+                self.status_message.config(text="Invalid constant current parameters", foreground='red')
 
     def start_scan_thread(self, *args):
         self.scan_button.configure(style='Blue.TButton', state=tk.DISABLED)
+        self.status_message.config(text="Scan started...", foreground='purple')
         scan_thread = threading.Thread(target=self._scan_task, args=args, daemon=True)
         scan_thread.start()
 
@@ -678,7 +843,26 @@ class App(tk.Tk):
 
     def _on_scan_complete(self):
         self.scan_button.configure(style='TButton', state=tk.NORMAL)
+        self.status_message.config(text="Scan completed", foreground='green')
 
+    def _stop_operation(self):
+        """Stop any ongoing operation and update status bar."""
+        self.stm.stop()
+        self.status_message.config(text="Operation stopped", foreground='red')
+        print("Operation stopped")
+    
+    def _reset_stm(self):
+        """Reset STM and update status bar."""
+        self.stm.reset()
+        self.status_message.config(text="STM reset", foreground='orange')
+        print("STM reset")
+    
+    def _clear_data(self):
+        """Clear data history and update status bar."""
+        self.stm.clear()
+        self.status_message.config(text="Data cleared", foreground='black')
+        print("Data cleared")
+    
     def _quit(self):
         self.quit(); self.destroy()
 
@@ -691,6 +875,9 @@ class App(tk.Tk):
             if self.stm.history and len(self.stm.history) > 0:
                 self.status_label.config(text=status.to_string())
                 
+                # Update status bar
+                self._update_status_bar(status)
+                
                 # Only update plots if we have new data
                 if len(self.stm.history) > 1:
                     plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
@@ -701,6 +888,60 @@ class App(tk.Tk):
                     self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
         self.after_id = self.after(50, self._update_real_time)  # Faster update rate for better responsiveness
 
+    def _update_status_bar(self, status):
+        """Update the status bar with current STM status."""
+        # Connection status
+        if self.stm.is_opened:
+            self.status_connection.config(text="🟢 Connected", foreground='green')
+        else:
+            self.status_connection.config(text="⚫ Disconnected", foreground='gray')
+        
+        # Mode status
+        mode_text = "Mode: "
+        mode_color = 'black'
+        if status.is_approaching:
+            if status.approach_recovery:
+                mode_text += "Approaching (Recovery)"
+                mode_color = 'orange'
+            else:
+                mode_text += "Approaching"
+                mode_color = 'blue'
+        elif status.is_const_current:
+            mode_text += "Constant Current"
+            mode_color = 'green'
+        elif status.is_scanning:
+            mode_text += "Scanning"
+            mode_color = 'purple'
+        else:
+            mode_text += "Idle"
+            mode_color = 'gray'
+        self.status_mode.config(text=mode_text, foreground=mode_color)
+        
+        # Current reading
+        current_amps = stm_control.STM_Status.adc_to_amp(status.adc)
+        current_nanoamps = current_amps * 1e9
+        adc_text = f"Current: {current_nanoamps:.2f} nA (ADC: {status.adc})"
+        self.status_current.config(text=adc_text)
+        
+        # Position
+        self.status_position.config(text=f"Steps: {status.steps}")
+        
+        # Status message
+        if status.is_approaching:
+            direction = "Forward" if status.approach_direction == 1 else "Backward"
+            if status.approach_recovery:
+                self.status_message.config(text=f"Recovering from overshoot - {direction}", foreground='orange')
+            else:
+                self.status_message.config(text=f"Approaching tip - {direction}", foreground='blue')
+        elif status.is_const_current:
+            self.status_message.config(text="Maintaining constant current", foreground='green')
+        elif status.is_scanning:
+            self.status_message.config(text="Scanning in progress...", foreground='purple')
+        elif self.stm.busy:
+            self.status_message.config(text="Busy...", foreground='orange')
+        else:
+            self.status_message.config(text="Ready", foreground='black')
+    
     def _update_images(self):
         if np.any(self.stm.scan_adc):
             self.scan_adc_frame.update_image(self.stm.scan_adc)
