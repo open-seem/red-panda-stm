@@ -75,6 +75,18 @@ class STM_Status:
             float: The corresponding current in Amperes.
         """
         return 1.0 * adc / 32768 * 10.24 / 100e6
+    
+    @staticmethod
+    def amp_to_adc(current: float):
+        """Convert current in Amperes to ADC value.
+
+        Args:
+            current (float): The current in Amperes to convert.
+
+        Returns:
+            float: The corresponding ADC value.
+        """
+        return current * 32768 * 100e6 / 10.24
     @staticmethod
     def set_bias_scaling_factor(factor: float):
         STM_Status.bias_scaling_factor = factor

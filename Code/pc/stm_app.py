@@ -38,15 +38,28 @@ class PlotFrame(ttk.Frame):
             self.toolbar.update()
             self.toolbar.pack(side=tk.BOTTOM, fill=tk.X)
 
-    def add_plot(self, label=None, xlabel=None, ylabel=None,):
+    def add_plot(self, label=None, xlabel=None, ylabel=None, ylabel2=None):
         self.ax = self.figure.add_subplot(111)
-        self.plot = self.ax.plot([0], [0], '-', label=label)[0]
+        self.plot = self.ax.plot([0], [0], '-', label=label, color='tab:blue')[0]
         self.ax.grid(True)
-        self.ax.legend(loc='upper right')
+        self.ax.tick_params(axis='y', labelcolor='tab:blue')
         if xlabel:
             self.ax.set(xlabel=xlabel)
         if ylabel:
             self.ax.set(ylabel=ylabel)
+            self.ax.yaxis.label.set_color('tab:blue')
+        
+        # Add secondary y-axis if requested (for same data in different units)
+        self.ax2 = None
+        self.has_dual_axis = False
+        if ylabel2:
+            self.ax2 = self.ax.twinx()
+            self.ax2.set_ylabel(ylabel2, color='tab:orange')
+            self.ax2.tick_params(axis='y', labelcolor='tab:orange')
+            self.has_dual_axis = True
+            self.ax.legend(loc='upper right')
+        else:
+            self.ax.legend(loc='upper right')
 
     def add_image(self, image, title=None):
         self.ax = self.figure.add_subplot(111)
@@ -63,6 +76,15 @@ class PlotFrame(ttk.Frame):
         self.plot.set_ydata(y_data)
         self.ax.relim()
         self.ax.autoscale_view()
+        
+        # Update secondary axis limits if it exists (showing same data in different units)
+        if self.has_dual_axis and self.ax2 is not None and len(y_data) > 0:
+            # Synchronize secondary axis to show ADC values for the same current range
+            y_min, y_max = self.ax.get_ylim()
+            adc_min = stm_control.STM_Status.amp_to_adc(y_min)
+            adc_max = stm_control.STM_Status.amp_to_adc(y_max)
+            self.ax2.set_ylim(adc_min, adc_max)
+        
         self.canvas.draw()
         self.canvas.flush_events()
 
@@ -87,6 +109,7 @@ class ApproachAndMotorControl(ttk.Frame):
         super().__init__(parent, *args, **kwargs)
         self.stm = stm_control
         self.grid_columnconfigure(2, weight=1) # Allow entry column to expand
+        self.grid_columnconfigure(3, weight=0) # Current display column
 
         # --- Buttons ---
         button_frame = ttk.Frame(self)
@@ -116,10 +139,15 @@ class ApproachAndMotorControl(ttk.Frame):
         fine_button.grid(row=5, column=0, sticky='ew', pady=2)
 
         # --- Labels and Entries ---
-        ttk.Label(self, text="Target:").grid(row=0, column=1, sticky='w')
+        ttk.Label(self, text="Target (ADC):").grid(row=0, column=1, sticky='w')
         self.target_var = tk.StringVar(value="500")
         target_entry = ttk.Entry(self, textvariable=self.target_var, width=10)
         target_entry.grid(row=0, column=2, sticky='ew', pady=2)
+        target_entry.bind('<KeyRelease>', self._update_target_display)
+        
+        # Display equivalent current
+        self.target_current_label = ttk.Label(self, text="≈ 0.00 nA", font=('TkDefaultFont', 8), foreground='gray')
+        self.target_current_label.grid(row=0, column=3, sticky='w', padx=(5, 0))
 
         ttk.Label(self, text="Max Steps:").grid(row=1, column=1, sticky='w')
         self.max_steps_var = tk.StringVar(value="10000")
@@ -141,7 +169,10 @@ class ApproachAndMotorControl(ttk.Frame):
         # Add info label
         info_label = ttk.Label(self, text="Forward: tip towards sample, Backward: tip away from sample", 
                               font=('TkDefaultFont', 8), foreground='gray')
-        info_label.grid(row=4, column=1, columnspan=2, sticky='w', pady=(0, 5))
+        info_label.grid(row=4, column=1, columnspan=3, sticky='w', pady=(0, 5))
+        
+        # Initialize target display
+        self._update_target_display()
 
         # --- Fine approach parameters ---
         ttk.Label(self, text="Fine Step Size:").grid(row=5, column=1, sticky='w')
@@ -157,6 +188,16 @@ class ApproachAndMotorControl(ttk.Frame):
         set_fine_params_button = ttk.Button(self, text="Set Fine Params", command=self._set_fine_params)
         set_fine_params_button.grid(row=7, column=1, columnspan=2, sticky='ew', pady=(4,2))
 
+    def _update_target_display(self, event=None):
+        """Update the current display when target ADC value changes."""
+        try:
+            target_adc = int(self.target_var.get())
+            current_amps = stm_control.STM_Status.adc_to_amp(target_adc)
+            current_nanoamps = current_amps * 1e9  # Convert to nA
+            self.target_current_label.config(text=f"≈ {current_nanoamps:.2f} nA")
+        except (ValueError, AttributeError):
+            self.target_current_label.config(text="≈ --- nA")
+    
     def _start_approach(self):
         try:
             target_adc = int(self.target_var.get())
@@ -164,7 +205,10 @@ class ApproachAndMotorControl(ttk.Frame):
             step_interval = int(self.steps_var.get())
             direction = 1 if self.direction_var.get() == "Forward" else -1
             self.stm.approach(target_adc, max_steps, step_interval, direction)
+            current_amps = stm_control.STM_Status.adc_to_amp(target_adc)
+            current_nanoamps = current_amps * 1e9
             print(f"Starting approach in {self.direction_var.get()} direction")
+            print(f"Target: {target_adc} ADC (≈ {current_nanoamps:.2f} nA)")
         except ValueError:
             print("Invalid approach parameters")
 
@@ -266,7 +310,7 @@ class App(tk.Tk):
 
         # --- Place plots into the "Curves" tab ---
         self.real_time_current_plot_frame = PlotFrame(curve_tab_frame, with_toobar=True)
-        self.real_time_current_plot_frame.add_plot(label="Current", xlabel='Time (s)', ylabel='Current (A)')
+        self.real_time_current_plot_frame.add_plot(label="Current (A)", xlabel='Time (s)', ylabel='Current (A)', ylabel2='ADC Value')
         self.real_time_current_plot_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
 
         self.real_time_steps_plot_frame = PlotFrame(curve_tab_frame, with_toobar=True)
@@ -486,9 +530,23 @@ class App(tk.Tk):
         const_current_frame.grid_columnconfigure(1, weight=1)
         self.const_current_button = ttk.Button(const_current_frame, text="ConstCurrent On", command=self.toggle_const_current)
         self.const_current_button.grid(row=0, column=0, sticky='w', padx=(0,5))
+        
+        entry_frame = ttk.Frame(const_current_frame)
+        entry_frame.grid(row=0, column=1, sticky='ew')
+        entry_frame.grid_columnconfigure(0, weight=1)
+        
+        ttk.Label(entry_frame, text="Target (ADC):", font=('TkDefaultFont', 8)).grid(row=0, column=0, sticky='w')
         self.const_current_target_var = tk.StringVar(value="1000")
-        const_current_entry = ttk.Entry(const_current_frame, textvariable=self.const_current_target_var, width=15)
-        const_current_entry.grid(row=0, column=1, sticky='ew')
+        const_current_entry = ttk.Entry(entry_frame, textvariable=self.const_current_target_var, width=10)
+        const_current_entry.grid(row=1, column=0, sticky='ew')
+        const_current_entry.bind('<KeyRelease>', self._update_cc_target_display)
+        
+        self.cc_target_current_label = ttk.Label(entry_frame, text="≈ 0.00 nA", font=('TkDefaultFont', 8), foreground='gray')
+        self.cc_target_current_label.grid(row=1, column=1, sticky='w', padx=(5, 0))
+        
+        # Initialize display
+        self._update_cc_target_display()
+        
         row_number += 1
         
         add_separator()
@@ -579,6 +637,16 @@ class App(tk.Tk):
             "• Save IV: Saves the most recently measured I-V curve to a .csv file.\n"
             "• Save Scan: Saves the most recent scan data. Two text files (.txt) for ADC and Z-DAC values are created, along with two corresponding image files (.png).")
 
+    def _update_cc_target_display(self, event=None):
+        """Update the current display when constant current target ADC value changes."""
+        try:
+            target_adc = int(self.const_current_target_var.get())
+            current_amps = stm_control.STM_Status.adc_to_amp(target_adc)
+            current_nanoamps = current_amps * 1e9  # Convert to nA
+            self.cc_target_current_label.config(text=f"≈ {current_nanoamps:.2f} nA")
+        except (ValueError, AttributeError):
+            self.cc_target_current_label.config(text="≈ --- nA")
+    
     def toggle_const_current(self):
         # ... (implementation unchanged)
         if self.is_const_current_on:
@@ -591,6 +659,9 @@ class App(tk.Tk):
                 self.stm.turn_on_const_current(target_adc)
                 self.const_current_button.configure(style='Blue.TButton')
                 self.is_const_current_on = True
+                current_amps = stm_control.STM_Status.adc_to_amp(target_adc)
+                current_nanoamps = current_amps * 1e9
+                print(f"Constant current ON - Target: {target_adc} ADC (≈ {current_nanoamps:.2f} nA)")
             except (ValueError, TypeError) as e:
                 print(f"Invalid ADC target value for constant current: {e}")
 
@@ -623,9 +694,10 @@ class App(tk.Tk):
                 # Only update plots if we have new data
                 if len(self.stm.history) > 1:
                     plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
-                    plot_adc = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
+                    plot_current = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
                     plot_steps = [h.steps for h in self.stm.history]
-                    self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_adc)
+                    # Plot only current data - secondary axis will show ADC automatically
+                    self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_current)
                     self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
         self.after_id = self.after(50, self._update_real_time)  # Faster update rate for better responsiveness
 
