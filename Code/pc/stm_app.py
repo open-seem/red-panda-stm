@@ -70,7 +70,7 @@ class PlotFrame(ttk.Frame):
         self.cbar = self.figure.colorbar(self.image, ax=self.ax, fraction=0.046, pad=0.04)
 
 
-    def update_plot(self, x_data, y_data):
+    def update_plot(self, x_data, y_data, conversion_func=None):
         if not hasattr(self, 'plot'): return
         self.plot.set_xdata(x_data)
         self.plot.set_ydata(y_data)
@@ -79,11 +79,18 @@ class PlotFrame(ttk.Frame):
         
         # Update secondary axis limits if it exists (showing same data in different units)
         if self.has_dual_axis and self.ax2 is not None and len(y_data) > 0:
-            # Synchronize secondary axis to show ADC values for the same current range
             y_min, y_max = self.ax.get_ylim()
-            adc_min = stm_control.STM_Status.amp_to_adc(y_min)
-            adc_max = stm_control.STM_Status.amp_to_adc(y_max)
-            self.ax2.set_ylim(adc_min, adc_max)
+            
+            # Use provided conversion function or default to ADC conversion
+            if conversion_func:
+                converted_min = conversion_func(y_min)
+                converted_max = conversion_func(y_max)
+            else:
+                # Default: ADC conversion for current plot
+                converted_min = stm_control.STM_Status.amp_to_adc(y_min)
+                converted_max = stm_control.STM_Status.amp_to_adc(y_max)
+            
+            self.ax2.set_ylim(converted_min, converted_max)
         
         self.canvas.draw()
         self.canvas.flush_events()
@@ -208,6 +215,11 @@ class ApproachAndMotorControl(ttk.Frame):
         self.steps_var = tk.StringVar(value="10")
         steps_entry = ttk.Entry(self, textvariable=self.steps_var, width=10)
         steps_entry.grid(row=2, column=2, sticky='ew', pady=2)
+        steps_entry.bind('<KeyRelease>', self._update_steps_display)
+        
+        # Display equivalent distance
+        self.steps_distance_label = ttk.Label(self, text="≈ 0.00 μm", font=('TkDefaultFont', 8), foreground='gray')
+        self.steps_distance_label.grid(row=2, column=3, sticky='w', padx=(5, 0))
 
         ttk.Label(self, text="Direction:").grid(row=3, column=1, sticky='w')
         self.direction_var = tk.StringVar(value="Forward")
@@ -221,8 +233,9 @@ class ApproachAndMotorControl(ttk.Frame):
                               font=('TkDefaultFont', 8), foreground='gray')
         info_label.grid(row=4, column=1, columnspan=3, sticky='w', pady=(0, 5))
         
-        # Initialize target display
+        # Initialize displays
         self._update_target_display()
+        self._update_steps_display()
 
         # --- Fine approach parameters ---
         ttk.Label(self, text="Fine Step Size:").grid(row=5, column=1, sticky='w')
@@ -248,6 +261,19 @@ class ApproachAndMotorControl(ttk.Frame):
         except (ValueError, AttributeError):
             self.target_current_label.config(text="≈ --- nA")
     
+    def _update_steps_display(self, event=None):
+        """Update the distance display when steps value changes."""
+        try:
+            steps = int(self.steps_var.get())
+            distance_um = stm_control.STM_Status.steps_to_distance(steps)
+            if abs(distance_um) >= 1000:
+                distance_mm = distance_um / 1000
+                self.steps_distance_label.config(text=f"≈ {distance_mm:.3f} mm")
+            else:
+                self.steps_distance_label.config(text=f"≈ {distance_um:.2f} μm")
+        except (ValueError, AttributeError):
+            self.steps_distance_label.config(text="≈ --- μm")
+    
     def _start_approach(self):
         try:
             target_adc = int(self.target_var.get())
@@ -265,7 +291,9 @@ class ApproachAndMotorControl(ttk.Frame):
     def _move_backward(self):
         try:
             steps = int(self.steps_var.get())
+            distance_um = stm_control.STM_Status.steps_to_distance(steps)
             self.stm.move_motor(-steps)
+            print(f"Moving backward: {steps} steps ({distance_um:.2f} μm)")
             # Force immediate GUI update after motor move
             self.after_idle(lambda: self.stm.get_status())
         except ValueError:
@@ -274,7 +302,9 @@ class ApproachAndMotorControl(ttk.Frame):
     def _move_forward(self):
         try:
             steps = int(self.steps_var.get())
+            distance_um = stm_control.STM_Status.steps_to_distance(steps)
             self.stm.move_motor(steps)
+            print(f"Moving forward: {steps} steps ({distance_um:.2f} μm)")
             # Force immediate GUI update after motor move
             self.after_idle(lambda: self.stm.get_status())
         except ValueError:
@@ -415,7 +445,7 @@ class App(tk.Tk):
         self.real_time_current_plot_frame.grid(row=0, column=0, padx=5, pady=5, sticky='nsew')
 
         self.real_time_steps_plot_frame = PlotFrame(curve_tab_frame, with_toobar=True)
-        self.real_time_steps_plot_frame.add_plot(label="Z Steps", xlabel='Time (s)', ylabel='Piezo Steps')
+        self.real_time_steps_plot_frame.add_plot(label="Motor Position", xlabel='Time (s)', ylabel='Steps', ylabel2='Distance (μm)')
         self.real_time_steps_plot_frame.grid(row=1, column=0, padx=5, pady=5, sticky='nsew')
 
         self.iv_curve_frame = PlotFrame(curve_tab_frame, with_toobar=True)
@@ -883,9 +913,11 @@ class App(tk.Tk):
                     plot_x_sec = [(h.time_millis - self.stm.history[-1].time_millis) / 1000.0 for h in self.stm.history]
                     plot_current = [stm_control.STM_Status.adc_to_amp(h.adc) for h in self.stm.history]
                     plot_steps = [h.steps for h in self.stm.history]
-                    # Plot only current data - secondary axis will show ADC automatically
+                    # Plot current data - secondary axis will show ADC automatically
                     self.real_time_current_plot_frame.update_plot(plot_x_sec, plot_current)
-                    self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps)
+                    # Plot steps data - secondary axis will show distance in μm
+                    self.real_time_steps_plot_frame.update_plot(plot_x_sec, plot_steps, 
+                                                               stm_control.STM_Status.steps_to_distance)
         self.after_id = self.after(50, self._update_real_time)  # Faster update rate for better responsiveness
 
     def _update_status_bar(self, status):
@@ -923,8 +955,16 @@ class App(tk.Tk):
         adc_text = f"Current: {current_nanoamps:.2f} nA (ADC: {status.adc})"
         self.status_current.config(text=adc_text)
         
-        # Position
-        self.status_position.config(text=f"Steps: {status.steps}")
+        # Position with distance calculation
+        distance_um = stm_control.STM_Status.steps_to_distance(status.steps)
+        if abs(distance_um) >= 1000:
+            # Show in mm if >= 1mm
+            distance_mm = distance_um / 1000
+            position_text = f"Steps: {status.steps} ({distance_mm:.3f} mm)"
+        else:
+            # Show in μm
+            position_text = f"Steps: {status.steps} ({distance_um:.2f} μm)"
+        self.status_position.config(text=position_text)
         
         # Status message
         if status.is_approaching:

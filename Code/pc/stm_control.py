@@ -87,6 +87,28 @@ class STM_Status:
             float: The corresponding ADC value.
         """
         return current * 32768 * 100e6 / 10.24
+    
+    @staticmethod
+    def steps_to_distance(steps: int):
+        """Convert stepper motor steps to distance in micrometers.
+        
+        Motor: 28BYJ-48 with 4096 steps/revolution
+        Lead screw: M5x0.25 (0.25mm pitch)
+        
+        Args:
+            steps (int): Number of stepper motor steps.
+            
+        Returns:
+            float: Distance in micrometers (μm).
+        """
+        STEPS_PER_REVOLUTION = 4096  # 28BYJ-48: 64 steps * 64 gear ratio
+        PITCH_MM = 0.25  # M5x0.25 lead screw pitch in mm
+        
+        # Distance in mm
+        distance_mm = (steps / STEPS_PER_REVOLUTION) * PITCH_MM
+        # Convert to micrometers
+        distance_um = distance_mm * 1000
+        return distance_um
     @staticmethod
     def set_bias_scaling_factor(factor: float):
         STM_Status.bias_scaling_factor = factor
